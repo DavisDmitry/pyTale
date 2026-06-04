@@ -5,22 +5,17 @@ import com.hypixel.hytale.server.core.universe.world.World;
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.PolyglotException;
 
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
-
 public class WorldPythonContext {
     private final World world;
     private final HytaleLogger logger;
     private Context context;
 
-    public WorldPythonContext(World world) {
+    public WorldPythonContext(PyPlugin plugin, World world) {
         this.world = world;
-        this.logger = PyTale.get().getLogger().getSubLogger("[" + world.getName() + "]");
+        this.logger = PyTale.get().getLogger().getSubLogger("[" + plugin.getName() + ":" + world.getName() + "]");
     }
 
     public void initialize() {
-        CountDownLatch latch = new CountDownLatch(1);
-
         world.execute(() -> {
             ClassLoader previousCl = Thread.currentThread().getContextClassLoader();
             try {
@@ -31,18 +26,8 @@ public class WorldPythonContext {
                 logger.atSevere().log("Failed to initialize context: %s", e.getMessage());
             } finally {
                 Thread.currentThread().setContextClassLoader(previousCl);
-                latch.countDown();
             }
         });
-
-        try {
-            if (!latch.await(5, TimeUnit.SECONDS)) {
-                logger.atWarning().log("World context initialization timed out");
-            }
-        } catch (InterruptedException e) {
-            logger.atWarning().log("World context initialization interrupted");
-            Thread.currentThread().interrupt();
-        }
     }
 
     public void eval(String code) {
@@ -65,8 +50,6 @@ public class WorldPythonContext {
     }
 
     public void close() {
-        CountDownLatch latch = new CountDownLatch(1);
-
         world.execute(() -> {
             if (context != null) {
                 try {
@@ -76,17 +59,7 @@ public class WorldPythonContext {
                     logger.atSevere().log("Error closing context: %s", e.getMessage());
                 }
             }
-            latch.countDown();
         });
-
-        try {
-            if (!latch.await(5, TimeUnit.SECONDS)) {
-                logger.atWarning().log("World context close timed out");
-            }
-        } catch (InterruptedException e) {
-            logger.atWarning().log("World context close interrupted");
-            Thread.currentThread().interrupt();
-        }
     }
 
     public World getWorld() {

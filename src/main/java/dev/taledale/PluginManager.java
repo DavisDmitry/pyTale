@@ -69,6 +69,13 @@ public class PluginManager {
             .orElse(null);
     }
 
+    public void initializeSchedulerContexts() {
+        logger.atInfo().log("Initializing scheduler contexts for %d plugin(s)", plugins.size());
+        for (PyPlugin plugin : plugins) {
+            plugin.initializeSchedulerContext();
+        }
+    }
+
     public void shutdown() {
         logger.atInfo().log("Shutting down plugin manager");
         for (PyPlugin plugin : plugins) {

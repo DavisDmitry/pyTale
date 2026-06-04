@@ -12,7 +12,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class WorldContextManager {
     private final IEventRegistry eventRegistry;
     private final HytaleLogger logger;
-    private final Map<String, WorldPythonContext> contexts = new ConcurrentHashMap<>();
+    private final Map<String, Map<String, WorldPythonContext>> contexts = new ConcurrentHashMap<>();
 
     public WorldContextManager(IEventRegistry eventRegistry) {
         this.eventRegistry = eventRegistry;
@@ -30,9 +30,17 @@ public class WorldContextManager {
         String worldName = world.getName();
         logger.atInfo().log("World added: %s", worldName);
 
-        WorldPythonContext context = new WorldPythonContext(world);
-        context.initialize();
-        contexts.put(worldName, context);
+        Map<String, WorldPythonContext> worldContexts = new ConcurrentHashMap<>();
+        contexts.put(worldName, worldContexts);
+
+        PluginManager pluginManager = PyTale.get().getPluginManager();
+        logger.atInfo().log("Creating world contexts for %d plugin(s)", pluginManager.getPlugins().size());
+        for (PyPlugin plugin : pluginManager.getPlugins()) {
+            logger.atInfo().log("Creating world context for plugin: %s", plugin.getName());
+            WorldPythonContext context = new WorldPythonContext(plugin, world);
+            context.initialize();
+            worldContexts.put(plugin.getName(), context);
+        }
     }
 
     private void onRemoveWorld(RemoveWorldEvent event) {
@@ -40,24 +48,32 @@ public class WorldContextManager {
         String worldName = world.getName();
         logger.atInfo().log("World removed: %s", worldName);
 
-        WorldPythonContext context = contexts.remove(worldName);
-        if (context != null) {
-            context.close();
+        Map<String, WorldPythonContext> worldContexts = contexts.remove(worldName);
+        if (worldContexts != null) {
+            for (WorldPythonContext context : worldContexts.values()) {
+                context.close();
+            }
         }
     }
 
-    public WorldPythonContext getContext(String worldName) {
-        return contexts.get(worldName);
+    public WorldPythonContext getContext(String worldName, String pluginName) {
+        Map<String, WorldPythonContext> worldContexts = contexts.get(worldName);
+        if (worldContexts == null) {
+            return null;
+        }
+        return worldContexts.get(pluginName);
     }
 
-    public WorldPythonContext getContext(World world) {
-        return getContext(world.getName());
+    public WorldPythonContext getContext(World world, String pluginName) {
+        return getContext(world.getName(), pluginName);
     }
 
     public void shutdown() {
         logger.atInfo().log("Shutting down world context manager");
-        for (WorldPythonContext context : contexts.values()) {
-            context.close();
+        for (Map<String, WorldPythonContext> worldContexts : contexts.values()) {
+            for (WorldPythonContext context : worldContexts.values()) {
+                context.close();
+            }
         }
         contexts.clear();
     }

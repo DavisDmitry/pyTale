@@ -12,12 +12,14 @@ public class PyPlugin {
     private final String name;
     private final String code;
     private final AtomicReference<Context> generalContext = new AtomicReference<>();
+    private final PluginSchedulerContext schedulerContext;
     private final HytaleLogger logger;
 
     public PyPlugin(String name, String code) {
         this.name = name;
         this.code = code;
         this.logger = PyTale.get().getLogger().getSubLogger("[" + name + "]");
+        this.schedulerContext = new PluginSchedulerContext(this);
     }
 
     public void initializeGeneralContext() {
@@ -54,12 +56,20 @@ public class PyPlugin {
         }
     }
 
+    public void initializeSchedulerContext() {
+        schedulerContext.initialize();
+    }
+
     public String getName() {
         return name;
     }
 
     public Context getGeneralContext() {
         return generalContext.get();
+    }
+
+    public PluginSchedulerContext getSchedulerContext() {
+        return schedulerContext;
     }
 
     public void close() {
@@ -72,5 +82,6 @@ public class PyPlugin {
                 logger.atSevere().log("Error closing context: %s", e.getMessage());
             }
         }
+        schedulerContext.close();
     }
 }
