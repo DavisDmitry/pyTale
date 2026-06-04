@@ -8,7 +8,7 @@ import javax.annotation.Nonnull;
 public class PyTale extends JavaPlugin {
     private static PyTale instance;
     private SingleThreadPythonRuntime runtime;
-    private PluginLoader pluginLoader;
+    private PluginManager pluginManager;
     private WorldContextManager worldContextManager;
     private SchedulerPythonContext schedulerContext;
 
@@ -25,14 +25,17 @@ public class PyTale extends JavaPlugin {
         instance = this;
         getLogger().atInfo().log("PyTale setup started");
 
+        // 1. Initialize runtime and load plugins with their general contexts
         runtime = new SingleThreadPythonRuntime();
-        pluginLoader = new PluginLoader(runtime);
-        pluginLoader.loadAll();
+        pluginManager = new PluginManager();
+        pluginManager.loadAllPlugins();
 
-        schedulerContext = new SchedulerPythonContext(getTaskRegistry());
-
+        // 2. Initialize world contexts
         worldContextManager = new WorldContextManager(getEventRegistry());
         worldContextManager.start();
+
+        // 3. Initialize scheduler context
+        schedulerContext = new SchedulerPythonContext(getTaskRegistry());
 
         getLogger().atInfo().log("PyTale setup completed");
     }
@@ -46,10 +49,18 @@ public class PyTale extends JavaPlugin {
         if (schedulerContext != null) {
             schedulerContext.close();
         }
-        if (pluginLoader != null) {
-            pluginLoader.shutdown();
+        if (pluginManager != null) {
+            pluginManager.shutdown();
         }
         getLogger().atInfo().log("PyTale shutdown completed");
+    }
+
+    public SingleThreadPythonRuntime getRuntime() {
+        return runtime;
+    }
+
+    public PluginManager getPluginManager() {
+        return pluginManager;
     }
 
     public WorldContextManager getWorldContextManager() {
