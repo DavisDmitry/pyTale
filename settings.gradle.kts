@@ -1,4 +1,4 @@
-rootProject.name = "dev.hytalemodding"
+rootProject.name = "pytale"
 
 plugins {
     // See documentation on https://scaffoldit.dev
@@ -10,19 +10,19 @@ plugins {
 
 hytale {
     usePatchline("release")
-    useVersion("latest")
-
-    repositories {
-        // Any external repositories besides: MavenLocal, MavenCentral, HytaleMaven, and CurseMaven
-    }
+    useVersion("0.5.3")
 
     dependencies {
         // Any external dependency you also want to include
     }
 
     manifest {
-        Group = "HytaleModding"
-        Name = "ExamplePlugin"
-        Main = "dev.hytalemodding.ExamplePlugin"
+        Group = "TaleDale"
+        Name = "PyTale"
+        Main = "dev.taledale.PyTale"
+        Version = "0.0.1"
+        DisabledByDefault = false
+        IncludesAssetPack = false
+        ServerVersion = "=0.5.3"
     }
 }

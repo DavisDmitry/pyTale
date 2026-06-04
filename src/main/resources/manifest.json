@@ -1,20 +1,13 @@
 {
-    "Group": "HytaleModding",
-    "Name": "ExamplePlugin",
-    "Version": "0.0.0",
-    "Description": "Description of your plugin",
-    "Authors": [
-        {
-            "Name": "Your Name",
-            "Email": "your.email@example.com",
-            "Url": "https://your-website.com"
-        }
-    ],
+    "Group": "TaleDale",
+    "Name": "PyTale",
+    "Version": "0.0.1",
+    "Authors": [],
     "Website": "https://your-plugin-website.com",
     "DisabledByDefault": false,
     "IncludesAssetPack": false,
     "Dependencies": {},
     "OptionalDependencies": {},
-    "ServerVersion": "*",
-    "Main": "dev.hytalemodding.ExamplePlugin"
+    "ServerVersion": "=0.5.3",
+    "Main": "dev.taledale.PyTale"
 }

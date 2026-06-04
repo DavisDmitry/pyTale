@@ -7,5 +7,6 @@ repositories {
 }
 
 dependencies {
-    // Any external dependency you also want to include
+    implementation("org.graalvm.polyglot:polyglot:24.2.1")
+    implementation("org.graalvm.polyglot:python-community:24.2.1")
 }
