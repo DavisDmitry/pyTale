@@ -7,6 +7,8 @@ import javax.annotation.Nonnull;
 
 public class PyTale extends JavaPlugin {
     private static PyTale instance;
+    private SingleThreadPythonRuntime runtime;
+    private PluginLoader pluginLoader;
 
     public PyTale(@Nonnull JavaPluginInit init) {
         super(init);
@@ -14,5 +16,26 @@ public class PyTale extends JavaPlugin {
 
     public static PyTale get() {
         return instance;
+    }
+
+    @Override
+    protected void setup() {
+        instance = this;
+        getLogger().atInfo().log("PyTale setup started");
+
+        runtime = new SingleThreadPythonRuntime();
+        pluginLoader = new PluginLoader(runtime);
+        pluginLoader.loadAll();
+
+        getLogger().atInfo().log("PyTale setup completed");
+    }
+
+    @Override
+    protected void shutdown() {
+        getLogger().atInfo().log("PyTale shutdown started");
+        if (pluginLoader != null) {
+            pluginLoader.shutdown();
+        }
+        getLogger().atInfo().log("PyTale shutdown completed");
     }
 }
