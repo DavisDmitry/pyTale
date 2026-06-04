@@ -4,7 +4,6 @@ import com.hypixel.hytale.logger.HytaleLogger;
 import com.hypixel.hytale.server.core.HytaleServer;
 import com.hypixel.hytale.server.core.task.TaskRegistry;
 import org.graalvm.polyglot.Context;
-import org.graalvm.polyglot.HostAccess;
 import org.graalvm.polyglot.PolyglotException;
 import org.graalvm.polyglot.Value;
 
@@ -32,11 +31,7 @@ public class SchedulerPythonContext {
             ClassLoader previousCl = Thread.currentThread().getContextClassLoader();
             try {
                 Thread.currentThread().setContextClassLoader(PyTale.get().getClass().getClassLoader());
-                Context ctx = Context.newBuilder("python")
-                        .allowAllAccess(true)
-                        .allowHostAccess(HostAccess.ALL)
-                        .allowHostClassLookup(_ -> true)
-                        .build();
+                Context ctx = PythonContextFactory.newContext();
 
                 context.set(ctx);
                 ctx.getPolyglotBindings().putMember("_scheduler_api", new SchedulerAPI(this));

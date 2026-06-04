@@ -3,7 +3,6 @@ package dev.taledale;
 import com.hypixel.hytale.logger.HytaleLogger;
 import com.hypixel.hytale.server.core.universe.world.World;
 import org.graalvm.polyglot.Context;
-import org.graalvm.polyglot.HostAccess;
 import org.graalvm.polyglot.PolyglotException;
 
 import java.util.concurrent.CountDownLatch;
@@ -26,11 +25,7 @@ public class WorldPythonContext {
             ClassLoader previousCl = Thread.currentThread().getContextClassLoader();
             try {
                 Thread.currentThread().setContextClassLoader(PyTale.get().getClass().getClassLoader());
-                context = Context.newBuilder("python")
-                    .allowAllAccess(true)
-                    .allowHostAccess(HostAccess.ALL)
-                    .allowHostClassLookup(_ -> true)
-                    .build();
+                context = PythonContextFactory.newContext();
                 logger.atInfo().log("World Python context initialized");
             } catch (Exception e) {
                 logger.atSevere().log("Failed to initialize context: %s", e.getMessage());

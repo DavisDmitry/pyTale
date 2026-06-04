@@ -2,7 +2,6 @@ package dev.taledale;
 
 import com.hypixel.hytale.logger.HytaleLogger;
 import org.graalvm.polyglot.Context;
-import org.graalvm.polyglot.HostAccess;
 import org.graalvm.polyglot.PolyglotException;
 
 import java.util.concurrent.ExecutorService;
@@ -28,11 +27,7 @@ public class SingleThreadPythonRuntime {
                 ClassLoader previousCl = Thread.currentThread().getContextClassLoader();
                 try {
                     Thread.currentThread().setContextClassLoader(PyTale.get().getClass().getClassLoader());
-                    context = Context.newBuilder("python")
-                        .allowAllAccess(true)
-                        .allowHostAccess(HostAccess.ALL)
-                        .allowHostClassLookup(_ -> true)
-                        .build();
+                    context = PythonContextFactory.newContext();
                     logger.atInfo().log("Python context initialized");
                 } finally {
                     Thread.currentThread().setContextClassLoader(previousCl);
