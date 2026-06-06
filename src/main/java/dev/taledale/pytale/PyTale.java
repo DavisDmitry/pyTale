@@ -1,4 +1,4 @@
-package dev.taledale;
+package dev.taledale.pytale;
 
 import com.hypixel.hytale.server.core.plugin.JavaPlugin;
 import com.hypixel.hytale.server.core.plugin.JavaPluginInit;

@@ -1,4 +1,4 @@
-package dev.taledale;
+package dev.taledale.pytale;
 
 import com.hypixel.hytale.event.IEventRegistry;
 import com.hypixel.hytale.logger.HytaleLogger;

@@ -1,4 +1,4 @@
-package dev.taledale;
+package dev.taledale.pytale;
 
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.HostAccess;
