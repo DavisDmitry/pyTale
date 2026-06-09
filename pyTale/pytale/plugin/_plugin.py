@@ -3,22 +3,24 @@
 from pathlib import Path
 from typing import Any
 
-from pytale.plugin._types import ExecutionContext, PluginIdentifier, PluginManifest
+from pytale.plugin._types import ExecutionContext, PluginIdentifier, PluginManifest, PluginState
 
 __identifier: PluginIdentifier | None = None
 __manifest: PluginManifest | None = None
 __data_directory: Path | None = None
+__state: PluginState | None = None
 __context: ExecutionContext | None = None
 
 
 def _init_plugin(
-    identifier: Any, manifest: Any, data_directory: Any, context: int
+    identifier: Any, manifest: Any, data_directory: Any, state: int, context: int
 ) -> None:
     """Called by Java during plugin context initialization"""
-    global __identifier, __manifest, __data_directory, __context
+    global __identifier, __manifest, __data_directory, __state, __context
     __identifier = PluginIdentifier(identifier)
     __manifest = PluginManifest(manifest)
     __data_directory = Path(str(data_directory))
+    __state = PluginState(state)
     __context = ExecutionContext(context)
 
 
@@ -41,6 +43,13 @@ def get_data_directory() -> Path:
     if __data_directory is None:
         raise RuntimeError("Plugin not initialized")
     return __data_directory
+
+
+def get_state() -> PluginState:
+    """Get current plugin state"""
+    if __state is None:
+        raise RuntimeError("Plugin not initialized")
+    return __state
 
 
 def get_context() -> ExecutionContext:

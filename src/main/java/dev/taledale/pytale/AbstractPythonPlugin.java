@@ -140,11 +140,12 @@ public abstract class AbstractPythonPlugin extends JavaPlugin {
         bindings.putMember("__identifier", getIdentifier());
         bindings.putMember("__manifest", getManifest());
         bindings.putMember("__data_directory", getDataDirectory());
+        bindings.putMember("__state", getState().ordinal());
         bindings.putMember("__context", executionContext.getValue());
         ctx.eval("python",
                 "import pytale.plugin._plugin\n" +
                         "pytale.plugin._plugin._init_plugin" +
-                        "(__identifier, __manifest, __data_directory, __context)");
+                        "(__identifier, __manifest, __data_directory, __state, __context)");
     }
 
     private void initializeSchedulerContext() {
