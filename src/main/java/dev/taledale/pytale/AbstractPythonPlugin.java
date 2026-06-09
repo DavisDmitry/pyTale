@@ -29,6 +29,7 @@ public abstract class AbstractPythonPlugin extends JavaPlugin {
             worldContextManager = new WorldContextManager(this);
 
             initializeGeneralContext();
+            executeLifecycleListeners("setup");
             initializeSchedulerContext();
             worldContextManager.start();
         } catch (Exception e) {
@@ -37,7 +38,22 @@ public abstract class AbstractPythonPlugin extends JavaPlugin {
     }
 
     @Override
+    protected void start() {
+        executeLifecycleListeners("start");
+    }
+
+    @Override
     protected void shutdown() {
+        executeLifecycleListeners("shutdown");
+
+        if (worldContextManager != null) {
+            worldContextManager.shutdown();
+        }
+
+        if (schedulerContext != null) {
+            schedulerContext.close();
+        }
+
         Context ctx = generalContext.get();
         if (ctx != null) {
             try {
@@ -46,12 +62,6 @@ public abstract class AbstractPythonPlugin extends JavaPlugin {
             } catch (Exception e) {
                 getLogger().atSevere().log("Error closing context: %s", e.getMessage());
             }
-        }
-        if (schedulerContext != null) {
-            schedulerContext.close();
-        }
-        if (worldContextManager != null) {
-            worldContextManager.shutdown();
         }
     }
 
@@ -150,6 +160,27 @@ public abstract class AbstractPythonPlugin extends JavaPlugin {
 
     private void initializeSchedulerContext() {
         schedulerContext.initialize();
+    }
+
+    private void executeLifecycleListeners(String event) {
+        Context ctx = generalContext.get();
+        if (ctx == null) {
+            return;
+        }
+
+        ClassLoader previousCl = Thread.currentThread().getContextClassLoader();
+        try {
+            Thread.currentThread().setContextClassLoader(PyTale.get().getClass().getClassLoader());
+            org.graalvm.polyglot.Value bindings = ctx.getBindings("python");
+            bindings.putMember("__event", event);
+            ctx.eval("python",
+                    "from pytale.plugin._lifecycle import _execute_listeners\n" +
+                            "_execute_listeners(__event)");
+        } catch (Exception e) {
+            getLogger().atWarning().log("Error executing %s listeners: %s", event, e.getMessage());
+        } finally {
+            Thread.currentThread().setContextClassLoader(previousCl);
+        }
     }
 
     public Context getGeneralContext() {

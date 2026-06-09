@@ -3,7 +3,12 @@
 from pathlib import Path
 from typing import Any
 
-from pytale.plugin._types import ExecutionContext, PluginIdentifier, PluginManifest, PluginState
+from pytale.plugin._types import (
+    ExecutionContext,
+    PluginIdentifier,
+    PluginManifest,
+    PluginState,
+)
 
 __identifier: PluginIdentifier | None = None
 __manifest: PluginManifest | None = None

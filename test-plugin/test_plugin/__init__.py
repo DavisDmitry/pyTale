@@ -4,6 +4,9 @@ from pytale.plugin import (
     get_identifier,
     get_manifest,
     get_state,
+    on_setup,
+    on_start,
+    on_shutdown,
 )
 
 print("=" * 60)
@@ -33,3 +36,18 @@ context = get_context()
 print(f"\nExecution Context: {context.name} ({context.value})")
 
 print("\n" + "=" * 60)
+
+
+@on_setup
+def on_plugin_setup() -> None:
+    print("[LIFECYCLE] Plugin setup!")
+
+
+@on_start
+def on_plugin_start() -> None:
+    print("[LIFECYCLE] Plugin started!")
+
+
+@on_shutdown
+def on_plugin_shutdown() -> None:
+    print("[LIFECYCLE] Plugin shutting down!")
