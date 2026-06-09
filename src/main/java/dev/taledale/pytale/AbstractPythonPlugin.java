@@ -54,14 +54,8 @@ public abstract class AbstractPythonPlugin extends JavaPlugin {
             schedulerContext.close();
         }
 
-        Context ctx = generalContext.get();
-        if (ctx != null) {
-            try {
-                ctx.close();
-                getLogger().atInfo().log("General Python context closed");
-            } catch (Exception e) {
-                getLogger().atSevere().log("Error closing context: %s", e.getMessage());
-            }
+        if (runtime != null) {
+            runtime.close();
         }
     }
 

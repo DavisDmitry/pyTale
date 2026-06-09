@@ -69,16 +69,14 @@ public class WorldPythonContext {
     }
 
     public void close() {
-        world.execute(() -> {
-            if (context != null) {
-                try {
-                    context.close();
-                    logger.atInfo().log("World Python context closed");
-                } catch (Exception e) {
-                    logger.atSevere().log("Error closing context: %s", e.getMessage());
-                }
+        if (context != null) {
+            try {
+                context.close();
+                logger.atInfo().log("World Python context closed");
+            } catch (Exception e) {
+                logger.atSevere().log("Error closing context: %s", e.getMessage());
             }
-        });
+        }
     }
 
     public World getWorld() {
