@@ -1,17 +1,46 @@
 """Plugin builder for PyTale"""
 
 import shutil
+import subprocess
 import tempfile
 import zipfile
 from pathlib import Path
-from typing import Dict
+from typing import Dict, List, Optional
 
 
 class PluginBuilder:
-    def __init__(self, wheel_path: Path):
+    def __init__(
+        self,
+        wheel_path: Path,
+        requirements_path: Optional[Path] = None,
+        cache_dir: Optional[Path] = None,
+    ):
         self.wheel_path = wheel_path.resolve()
         if not self.wheel_path.exists():
             raise FileNotFoundError(f"Wheel not found: {self.wheel_path}")
+        self.requirements_path = (
+            requirements_path.resolve() if requirements_path else None
+        )
+        if self.requirements_path and not self.requirements_path.exists():
+            raise FileNotFoundError(
+                f"Requirements file not found: {self.requirements_path}"
+            )
+
+        # Set cache directory: explicit > project .pytale > user home
+        if cache_dir:
+            self.cache_dir = cache_dir.resolve()
+        elif (self.wheel_path.parent / ".pytale" / "wheels").exists() or (
+            self.wheel_path.parent.parent / ".pytale" / "wheels"
+        ).exists():
+            # Look for .pytale in wheel's parent or grandparent (project root)
+            project_cache = self.wheel_path.parent / ".pytale" / "wheels"
+            if not project_cache.exists():
+                project_cache = self.wheel_path.parent.parent / ".pytale" / "wheels"
+            self.cache_dir = project_cache
+        else:
+            # Default to user home cache
+            self.cache_dir = Path.home() / ".cache" / "pytale" / "wheels"
+
         self.metadata = self._read_metadata_from_wheel()
 
     def _read_metadata_from_wheel(self) -> Dict:
@@ -64,7 +93,6 @@ class PluginBuilder:
         pkg_dir.mkdir(parents=True, exist_ok=True)
 
         # Copy class file to temp directory
-        import shutil
         shutil.copy2(class_file, pkg_dir / "PythonPlugin.class")
 
         return "dev.taledale.pytale.PythonPlugin"
@@ -73,6 +101,125 @@ class PluginBuilder:
         """Find pre-extracted PythonPlugin.class in pytale-tools resources"""
         pytale_tools_dir = Path(__file__).parent
         return pytale_tools_dir / "resources" / "PythonPlugin.class"
+
+    def _ensure_cache_dir(self) -> None:
+        """Ensure cache directory exists"""
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+
+    def _parse_requirements(self) -> List[str]:
+        """Parse requirements.txt and return list of package specs"""
+        if not self.requirements_path:
+            return []
+
+        requirements = []
+        with open(self.requirements_path, "r") as f:
+            content = f.read()
+
+        # Handle line continuations (backslash at end of line)
+        lines = []
+        current_line = ""
+        for line in content.split("\n"):
+            # Remove inline comments
+            if "#" in line and not line.strip().startswith("#"):
+                line = line.split("#")[0]
+
+            line = line.rstrip()
+            if line.endswith("\\"):
+                current_line += line[:-1].strip() + " "
+            else:
+                current_line += line
+                if current_line.strip() and not current_line.strip().startswith("#"):
+                    requirements.append(current_line.strip())
+                current_line = ""
+
+        return requirements
+
+    def _get_cached_wheel(self, package_spec: str) -> Optional[Path]:
+        """Check if wheel for package spec exists in cache"""
+        self._ensure_cache_dir()
+
+        # Extract package name from spec (e.g., "tomli==2.0.1" -> "tomli")
+        package_name = (
+            package_spec.split("==")[0]
+            .split(">")[0]
+            .split("<")[0]
+            .split("!")[0]
+            .split("~")[0]
+            .strip()
+        )
+
+        # Look for any wheel matching this package name
+        for wheel_file in self.cache_dir.glob("*.whl"):
+            if wheel_file.name.startswith(package_name.replace("-", "_")):
+                print(f"✓ Using cached wheel: {wheel_file.name}")
+                return wheel_file
+        return None
+
+    def _cache_wheel(self, wheel_path: Path) -> None:
+        """Copy wheel to cache directory"""
+        self._ensure_cache_dir()
+        dest = self.cache_dir / wheel_path.name
+        shutil.copy2(wheel_path, dest)
+
+    def _download_dependencies(self) -> List[Path]:
+        """Download wheels for all dependencies from requirements.txt"""
+        if not self.requirements_path:
+            return []
+
+        self._ensure_cache_dir()
+        print(f"Downloading dependencies from {self.requirements_path.name}...")
+
+        try:
+            import sys
+
+            subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "pip",
+                    "download",
+                    "-r",
+                    str(self.requirements_path),
+                    "--only-binary=:all:",
+                    "--no-deps",
+                    "-d",
+                    str(self.cache_dir),
+                ],
+                check=True,
+                capture_output=True,
+            )
+        except subprocess.CalledProcessError as e:
+            raise RuntimeError(
+                f"Failed to download dependencies: {e.stderr.decode() if e.stderr else str(e)}"
+            )
+
+        # Collect all downloaded wheels
+        wheel_paths = list(self.cache_dir.glob("*.whl"))
+        if not wheel_paths:
+            raise FileNotFoundError(
+                f"No wheels downloaded from {self.requirements_path.name}"
+            )
+
+        for wheel_path in wheel_paths:
+            print(f"✓ Downloaded: {wheel_path.name}")
+
+        return wheel_paths
+
+    def _copy_all_wheels(
+        self, additional_wheel_paths: List[Path], temp_dir: Path
+    ) -> None:
+        """Copy main wheel and all dependency wheels to JAR root"""
+        # Copy main wheel
+        wheel_name = self.wheel_path.name
+        dest_wheel = temp_dir / wheel_name
+        shutil.copy2(self.wheel_path, dest_wheel)
+        print(f"✓ Copied wheel: {wheel_name}")
+
+        # Copy dependency wheels
+        for wheel_path in additional_wheel_paths:
+            dest = temp_dir / wheel_path.name
+            shutil.copy2(wheel_path, dest)
+            print(f"✓ Copied wheel: {wheel_path.name}")
 
     def _create_manifest_json(self, temp_dir: Path) -> Path:
         """Create manifest.json for Hytale"""
@@ -93,13 +240,6 @@ class PluginBuilder:
         }
         manifest_path.write_text(json.dumps(manifest, indent=4))
         return manifest_path
-
-    def _copy_wheel_file(self, temp_dir: Path):
-        """Copy wheel file to JAR root"""
-        wheel_name = self.wheel_path.name
-        dest_wheel = temp_dir / wheel_name
-        shutil.copy2(self.wheel_path, dest_wheel)
-        print(f"✓ Copied wheel: {wheel_name}")
 
     def _create_jar(self, temp_dir: Path, output_path: Path) -> Path:
         """Create JAR from temp directory, excluding build artifacts"""
@@ -133,8 +273,11 @@ class PluginBuilder:
             # Create manifest.json
             self._create_manifest_json(temp_dir)
 
-            # Copy wheel file
-            self._copy_wheel_file(temp_dir)
+            # Download and copy wheels
+            dependency_wheels = (
+                self._download_dependencies() if self.requirements_path else []
+            )
+            self._copy_all_wheels(dependency_wheels, temp_dir)
 
             # Create JAR
             self._create_jar(temp_dir, output_path)

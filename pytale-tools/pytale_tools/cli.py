@@ -24,6 +24,16 @@ def create_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Output JAR path (default: plugin-name.jar)"
     )
+    build_parser.add_argument(
+        "-r", "--requirements",
+        type=Path,
+        help="Optional: path to requirements.txt for plugin dependencies (versions must be pinned with ==)"
+    )
+    build_parser.add_argument(
+        "-c", "--cache-dir",
+        type=Path,
+        help="Optional: directory for caching downloaded wheels (default: .pytale/wheels in project or ~/.cache/pytale/wheels)"
+    )
 
     return parser
 
@@ -38,7 +48,11 @@ def main():
 
     try:
         if args.command == "build":
-            builder = PluginBuilder(args.wheel)
+            builder = PluginBuilder(
+                args.wheel,
+                args.requirements,
+                args.cache_dir if hasattr(args, 'cache_dir') else None
+            )
             output = args.output or Path(f"{builder.metadata['name']}.jar")
             builder.build(output)
             return 0
