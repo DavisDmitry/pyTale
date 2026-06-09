@@ -3,11 +3,8 @@
     "Name": "PyTale",
     "Version": "0.0.1",
     "Authors": [],
-    "Website": "https://your-plugin-website.com",
     "DisabledByDefault": false,
     "IncludesAssetPack": false,
-    "Dependencies": {},
-    "OptionalDependencies": {},
     "ServerVersion": "=0.5.3",
     "Main": "dev.taledale.pytale.PyTale"
 }

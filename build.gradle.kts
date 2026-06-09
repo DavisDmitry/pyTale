@@ -11,16 +11,34 @@ dependencies {
     implementation("org.graalvm.polyglot:python-community:24.2.1")
 }
 
-tasks.register("generateClasspath") {
+tasks.register("extractPythonPluginClass") {
+    dependsOn("jar")
     doLast {
-        val classpath = configurations.runtimeClasspath.get().asPath
-        val resourceDir = file("build/resources/main/META-INF")
+        val pytaleJar = file("build/libs/pytale.jar")
+        val resourceDir = file("pytale-tools/pytale_tools/resources")
+        val outputFile = file("pytale-tools/pytale_tools/resources/PythonPlugin.class")
+
+        if (!pytaleJar.exists()) {
+            throw GradleException("pytale.jar not found at ${pytaleJar.absolutePath}")
+        }
+
         resourceDir.mkdirs()
-        file("build/resources/main/META-INF/javac-classpath.txt").writeText(classpath)
-        println("✓ Classpath saved to: build/resources/main/META-INF/javac-classpath.txt")
+
+        project.zipTree(pytaleJar).matching {
+            include("dev/taledale/pytale/PythonPlugin.class")
+        }.forEach { file ->
+            if (file.isFile) {
+                file.copyTo(outputFile, overwrite = true)
+                println("✓ Extracted PythonPlugin.class to ${outputFile.relativeTo(rootDir)}")
+            }
+        }
+
+        if (!outputFile.exists()) {
+            throw GradleException("Failed to extract PythonPlugin.class from pytale.jar")
+        }
     }
 }
 
-tasks.named("processResources") {
-    dependsOn("generateClasspath")
+tasks.named("jar") {
+    finalizedBy("extractPythonPluginClass")
 }

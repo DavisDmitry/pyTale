@@ -1,0 +1,5 @@
+[tool.uv]
+python-preference = "only-managed"
+
+[tool.uv.workspace]
+members = ["pytale-tools", "test-plugin"]

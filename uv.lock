@@ -1,0 +1,19 @@
+version = 1
+revision = 3
+requires-python = ">=3.12"
+
+[manifest]
+members = [
+    "pytale-tools",
+    "test-plugin",
+]
+
+[[package]]
+name = "pytale-tools"
+version = "0.1.0"
+source = { editable = "pytale-tools" }
+
+[[package]]
+name = "test-plugin"
+version = "1.0.0"
+source = { editable = "test-plugin" }

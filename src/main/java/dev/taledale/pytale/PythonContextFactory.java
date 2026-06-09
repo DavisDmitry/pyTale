@@ -11,6 +11,7 @@ public class PythonContextFactory {
             .allowAllAccess(true)
             .allowHostAccess(HostAccess.ALL)
             .allowHostClassLookup(_ -> true)
+            .option("engine.WarnInterpreterOnly", "false")
             .build();
     }
 }

@@ -6,8 +6,6 @@ import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.PolyglotException;
 
 import javax.annotation.Nonnull;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -25,12 +23,11 @@ public abstract class AbstractPythonPlugin extends JavaPlugin {
     @Override
     protected void setup() {
         try {
-            String pythonCode = loadPythonCode();
             runtime = new SingleThreadPythonRuntime();
             schedulerContext = new PluginSchedulerContext(this);
             worldContextManager = new WorldContextManager(this);
 
-            initializeGeneralContext(pythonCode);
+            initializeGeneralContext();
             initializeSchedulerContext();
             worldContextManager.start();
         } catch (Exception e) {
@@ -57,7 +54,7 @@ public abstract class AbstractPythonPlugin extends JavaPlugin {
         }
     }
 
-    private void initializeGeneralContext(String code) {
+    private void initializeGeneralContext() {
         CountDownLatch latch = new CountDownLatch(1);
 
         runtime.submit(() -> {
@@ -68,10 +65,13 @@ public abstract class AbstractPythonPlugin extends JavaPlugin {
                 generalContext.set(ctx);
                 getLogger().atInfo().log("General Python context initialized");
 
-                ctx.eval("python", code);
+                String pythonCode = loadPythonCode();
+                ctx.eval("python", pythonCode);
                 getLogger().atInfo().log("Plugin code executed");
             } catch (PolyglotException e) {
                 getLogger().atWarning().log("Python error during initialization: %s", e.getMessage());
+            } catch (Exception e) {
+                getLogger().atWarning().log("Error executing plugin: %s", e.getMessage());
             } finally {
                 Thread.currentThread().setContextClassLoader(previousCl);
                 latch.countDown();
@@ -88,6 +88,37 @@ public abstract class AbstractPythonPlugin extends JavaPlugin {
         }
     }
 
+    protected String loadPythonCode() throws Exception {
+        String moduleName = getPythonModuleName();
+        String entryPath = "python/" + moduleName + "/__init__.py";
+
+        java.nio.file.Path location = getPluginJarPath();
+
+        try (java.util.zip.ZipFile zf = new java.util.zip.ZipFile(location.toFile())) {
+            java.util.zip.ZipEntry entry = zf.getEntry(entryPath);
+            if (entry == null) {
+                throw new Exception("Python code not found in plugin: " + entryPath);
+            }
+            try (java.io.InputStream is = zf.getInputStream(entry)) {
+                return new String(is.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+            }
+        }
+    }
+
+    private java.nio.file.Path getPluginJarPath() throws Exception {
+        java.nio.file.Path pluginFile = getFile();
+        if (pluginFile == null || !java.nio.file.Files.exists(pluginFile)) {
+            throw new Exception("Cannot determine plugin location");
+        }
+        return pluginFile;
+
+    }
+
+    private String getPythonModuleName() throws Exception {
+        String name = getManifest().getName();
+        return name.replace("-", "_");
+    }
+
     private void initializeSchedulerContext() {
         schedulerContext.initialize();
     }
@@ -98,13 +129,5 @@ public abstract class AbstractPythonPlugin extends JavaPlugin {
 
     public PluginSchedulerContext getSchedulerContext() {
         return schedulerContext;
-    }
-
-    protected String loadPythonCode() throws Exception {
-        InputStream is = getClass().getResourceAsStream("/python/__init__.py");
-        if (is == null) {
-            throw new Exception("python/__init__.py not found in plugin resources");
-        }
-        return new String(is.readAllBytes(), StandardCharsets.UTF_8);
     }
 }

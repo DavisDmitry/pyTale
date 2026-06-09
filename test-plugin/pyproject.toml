@@ -1,0 +1,9 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "test-plugin"
+version = "1.0.0"
+description = "Test plugin for pyTale"
+requires-python = ">=3.12"

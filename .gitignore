@@ -43,4 +43,27 @@ build/
 .gradle
 .kotlin
 devserver
+gradle.properties
 /.idea/
+bin/
+
+### Python ###
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+.env
+.env.local
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.coverage
+*.pyc
+.mypy_cache/
+.dmypy.json
+dmypy.json
