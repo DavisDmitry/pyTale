@@ -13,6 +13,7 @@ class PluginBuilder:
         wheel_path: Path,
         requirements_path: Path | None = None,
         cache_dir: Path | None = None,
+        additional_wheels: list[Path] | None = None,
     ):
         self.wheel_path = wheel_path.resolve()
         if not self.wheel_path.exists():
@@ -24,6 +25,15 @@ class PluginBuilder:
             raise FileNotFoundError(
                 f"Requirements file not found: {self.requirements_path}"
             )
+
+        # Validate and store additional wheels
+        self.additional_wheels = []
+        if additional_wheels:
+            for wheel in additional_wheels:
+                wheel_resolved = wheel.resolve()
+                if not wheel_resolved.exists():
+                    raise FileNotFoundError(f"Additional wheel not found: {wheel}")
+                self.additional_wheels.append(wheel_resolved)
 
         # Set cache directory: explicit > project .pytale > user home
         if cache_dir:
@@ -244,15 +254,21 @@ class PluginBuilder:
     def _copy_all_wheels(
         self, additional_wheel_paths: list[Path], temp_dir: Path
     ) -> None:
-        """Copy main wheel and all dependency wheels to JAR root"""
+        """Copy main wheel, dependency wheels, and additional wheels to JAR root"""
         # Copy main wheel
         wheel_name = self.wheel_path.name
         dest_wheel = temp_dir / wheel_name
         shutil.copy2(self.wheel_path, dest_wheel)
         print(f"✓ Copied wheel: {wheel_name}")
 
-        # Copy dependency wheels
+        # Copy dependency wheels from requirements
         for wheel_path in additional_wheel_paths:
+            dest = temp_dir / wheel_path.name
+            shutil.copy2(wheel_path, dest)
+            print(f"✓ Copied wheel: {wheel_path.name}")
+
+        # Copy additional wheels from -w argument
+        for wheel_path in self.additional_wheels:
             dest = temp_dir / wheel_path.name
             shutil.copy2(wheel_path, dest)
             print(f"✓ Copied wheel: {wheel_path.name}")
@@ -271,7 +287,7 @@ class PluginBuilder:
             "IncludesAssetPack": False,
             "Dependencies": {"TaleDale:PyTale": ">=0.0.1"},
             "OptionalDependencies": {},
-            "ServerVersion": "=0.5.3",
+            "ServerVersion": "=0.5.4",
             "Main": "dev.taledale.pytale.PythonPlugin",
         }
         manifest_path.write_text(json.dumps(manifest, indent=4))

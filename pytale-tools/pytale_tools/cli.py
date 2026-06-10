@@ -33,6 +33,13 @@ def create_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Optional: directory for caching downloaded wheels (default: .pytale/wheels in project or ~/.cache/pytale/wheels)",
     )
+    build_parser.add_argument(
+        "-w",
+        "--wheels",
+        type=Path,
+        nargs="*",
+        help="Optional: additional wheel files to include in the JAR",
+    )
 
     return parser
 
@@ -51,6 +58,7 @@ def main() -> int:
                 args.wheel,
                 args.requirements,
                 args.cache_dir if hasattr(args, "cache_dir") else None,
+                args.wheels if hasattr(args, "wheels") else None,
             )
             output = args.output or Path(f"{builder.metadata['name']}.jar")
             builder.build(output)
