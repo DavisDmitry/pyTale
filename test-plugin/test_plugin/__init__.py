@@ -3,10 +3,9 @@ from pytale.plugin import (
     get_data_directory,
     get_identifier,
     get_manifest,
-    get_state,
     on_setup,
-    on_start,
     on_shutdown,
+    on_start,
 )
 
 print("=" * 60)
@@ -28,9 +27,6 @@ print(f"  Website: {manifest.website}")
 
 data_dir = get_data_directory()
 print(f"\nData Directory: {data_dir}")
-
-state = get_state()
-print(f"\nPlugin State: {state.name} ({state.value})")
 
 context = get_context()
 print(f"\nExecution Context: {context.name} ({context.value})")

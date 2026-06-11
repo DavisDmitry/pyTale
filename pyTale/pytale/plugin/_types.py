@@ -67,15 +67,3 @@ class PluginManifest:
 
     def __repr__(self) -> str:
         return f"PluginManifest({self.name} v{self.version})"
-
-
-class PluginState(IntEnum):
-    """Plugin lifecycle state"""
-
-    NONE = 0
-    SETUP = 1
-    START = 2
-    ENABLED = 3
-    SHUTDOWN = 4
-    DISABLED = 5
-    FAILED = 6
