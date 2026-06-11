@@ -12,7 +12,7 @@ __context: ExecutionContext | None = None
 
 
 def _init_plugin(
-    identifier: Any, manifest: Any, data_directory: Any, state: int, context: int
+    identifier: Any, manifest: Any, data_directory: Any, context: int
 ) -> None:
     """Called by Java during plugin context initialization"""
     global __identifier, __manifest, __data_directory, __context
