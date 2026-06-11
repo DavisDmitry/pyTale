@@ -8,8 +8,7 @@ class ExecutionContext(IntEnum):
     """Context in which the plugin code is running"""
 
     GENERAL = 0
-    SCHEDULER = 1
-    WORLD = 2
+    WORLD = 1
 
 
 class PluginIdentifier:

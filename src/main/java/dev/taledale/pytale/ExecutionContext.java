@@ -6,8 +6,7 @@ package dev.taledale.pytale;
  */
 public enum ExecutionContext {
     GENERAL(0),
-    SCHEDULER(1),
-    WORLD(2);
+    WORLD(1);
 
     private final int value;
 

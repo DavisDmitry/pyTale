@@ -44,7 +44,7 @@ def get_data_directory() -> Path:
 
 
 def get_context() -> ExecutionContext:
-    """Get current execution context (general, scheduler, or world)"""
+    """Get current execution context (general or world)"""
     if __context is None:
         raise RuntimeError("Plugin not initialized")
     return __context

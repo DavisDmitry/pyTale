@@ -13,7 +13,6 @@ import java.util.concurrent.atomic.AtomicReference;
 public abstract class AbstractPythonPlugin extends JavaPlugin {
     private final AtomicReference<Context> generalContext = new AtomicReference<>();
     private final AtomicReference<java.util.List<String>> wheelPaths = new AtomicReference<>();
-    private PluginSchedulerContext schedulerContext;
     private SingleThreadPythonRuntime runtime;
     private WorldContextManager worldContextManager;
 
@@ -25,12 +24,10 @@ public abstract class AbstractPythonPlugin extends JavaPlugin {
     protected void setup() {
         try {
             runtime = new SingleThreadPythonRuntime();
-            schedulerContext = new PluginSchedulerContext(this);
             worldContextManager = new WorldContextManager(this);
 
             initializeGeneralContext();
             executeLifecycleListeners("setup");
-            initializeSchedulerContext();
             worldContextManager.start();
         } catch (Exception e) {
             getLogger().atSevere().log("Failed to load Python plugin: %s", e.getMessage());
@@ -48,10 +45,6 @@ public abstract class AbstractPythonPlugin extends JavaPlugin {
 
         if (worldContextManager != null) {
             worldContextManager.shutdown();
-        }
-
-        if (schedulerContext != null) {
-            schedulerContext.close();
         }
 
         if (runtime != null) {
@@ -151,10 +144,6 @@ public abstract class AbstractPythonPlugin extends JavaPlugin {
                         "(__identifier, __manifest, __data_directory, __context)");
     }
 
-    private void initializeSchedulerContext() {
-        schedulerContext.initialize();
-    }
-
     private void executeLifecycleListeners(String event) {
         Context ctx = generalContext.get();
         if (ctx == null) {
@@ -178,10 +167,6 @@ public abstract class AbstractPythonPlugin extends JavaPlugin {
 
     public Context getGeneralContext() {
         return generalContext.get();
-    }
-
-    public PluginSchedulerContext getSchedulerContext() {
-        return schedulerContext;
     }
 
     public java.util.List<String> getWheelPaths() {
