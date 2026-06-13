@@ -10,3 +10,11 @@ requires-python = ">=3.12,<3.13"
 
 [tool.hatch.build.targets.wheel]
 packages = ["pytale"]
+
+[tool.uv.sources]
+java-stubs = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "java-stubs",
+]

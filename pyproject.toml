@@ -2,7 +2,7 @@
 python-preference = "only-managed"
 
 [tool.uv.workspace]
-members = ["pyTale", "pytale-tools", "test-plugin"]
+members = ["pyTale", "pytale-tools", "test-plugin", "java-stubs"]
 
 [tool.uv.sources]
 pytale = { workspace = true }
@@ -19,3 +19,4 @@ profile = "black"
 [tool.mypy]
 python_version = "3.12"
 disallow_untyped_defs = true
+mypy_path = ["java-stubs"]

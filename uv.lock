@@ -4,6 +4,7 @@ requires-python = "==3.12.*"
 
 [manifest]
 members = [
+    "java-stubs",
     "pytale",
     "pytale-tools",
     "test-plugin",
@@ -68,6 +69,11 @@ wheels = [
 ]
 
 [[package]]
+name = "java-stubs"
+version = "25.0.3.post1"
+source = { editable = "java-stubs" }
+
+[[package]]
 name = "mypy-extensions"
 version = "1.1.0"
 source = { registry = "https://pypi.org/simple" }
@@ -116,6 +122,16 @@ wheels = [
 name = "pytale"
 version = "0.5.4.post1"
 source = { editable = "pyTale" }
+
+[package.dev-dependencies]
+dev = [
+    { name = "java-stubs" },
+]
+
+[package.metadata]
+
+[package.metadata.requires-dev]
+dev = [{ name = "java-stubs", editable = "java-stubs" }]
 
 [[package]]
 name = "pytale-tools"

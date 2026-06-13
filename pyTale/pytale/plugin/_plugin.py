@@ -1,9 +1,12 @@
 """Plugin information and initialization"""
 
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING
 
 from pytale.plugin._types import ExecutionContext, PluginIdentifier, PluginManifest
+
+if TYPE_CHECKING:
+    from java import JavaObject
 
 __identifier: PluginIdentifier | None = None
 __manifest: PluginManifest | None = None
@@ -12,7 +15,10 @@ __context: ExecutionContext | None = None
 
 
 def _init_plugin(
-    identifier: Any, manifest: Any, data_directory: Any, context: int
+    identifier: "JavaObject",
+    manifest: "JavaObject",
+    data_directory: "JavaObject",
+    context: int,
 ) -> None:
     """Called by Java during plugin context initialization"""
     global __identifier, __manifest, __data_directory, __context
