@@ -1,10 +1,12 @@
 package dev.taledale.pytale;
 
+import com.hypixel.hytale.event.IAsyncEvent;
 import com.hypixel.hytale.event.IEvent;
 import com.hypixel.hytale.server.core.plugin.JavaPlugin;
 import com.hypixel.hytale.server.core.plugin.JavaPluginInit;
 import com.hypixel.hytale.server.core.universe.Universe;
 import com.hypixel.hytale.server.core.universe.world.World;
+import dev.taledale.pytale.context.AsyncPythonContext;
 import dev.taledale.pytale.context.PythonContext;
 import dev.taledale.pytale.context.world.WorldContextManager;
 import dev.taledale.pytale.context.world.WorldPythonContext;
@@ -14,13 +16,16 @@ import org.graalvm.polyglot.Value;
 
 import javax.annotation.Nonnull;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
+import java.util.function.Function;
 
 public abstract class AbstractPythonPlugin extends JavaPlugin {
     private final AtomicReference<List<String>> wheelPaths = new AtomicReference<>();
     private Engine pythonEngine;
     private PythonContext generalContext;
+    private AsyncPythonContext asyncContext;
     private WorldContextManager worldContextManager;
 
     public AbstractPythonPlugin(@Nonnull JavaPluginInit init) {
@@ -45,6 +50,11 @@ public abstract class AbstractPythonPlugin extends JavaPlugin {
                     ExecutionContext.GENERAL);
             generalContext.init();
 
+            asyncContext = new AsyncPythonContext(
+                    this,
+                    getLogger().getSubLogger("AsyncContext"));
+            asyncContext.init();
+
             readAndRegisterEventHandlers();
             executeLifecycleListeners("setup");
             worldContextManager.start();
@@ -64,6 +74,10 @@ public abstract class AbstractPythonPlugin extends JavaPlugin {
 
         if (worldContextManager != null) {
             worldContextManager.shutdown();
+        }
+
+        if (asyncContext != null) {
+            asyncContext.close(true);
         }
 
         if (generalContext != null) {
@@ -124,6 +138,34 @@ public abstract class AbstractPythonPlugin extends JavaPlugin {
                         getEventRegistry().register(priority, (Class) eventClass, key, (Consumer) listener);
                     }
                     getLogger().atInfo().log("Registered event handler %d for %s", index, eventClass.getSimpleName());
+                }
+
+                ctx.eval("python",
+                        "import pytale.events._async_registry as __areg\n" +
+                                "__async_handlers = __areg._async_handlers");
+                Value asyncHandlers = ctx.getBindings("python").getMember("__async_handlers");
+                int asyncSize = (int) asyncHandlers.getArraySize();
+                for (int i = 0; i < asyncSize; i++) {
+                    int index = i;
+                    Value handler = asyncHandlers.getArrayElement(i);
+                    Class<? extends IAsyncEvent<?>> eventClass = (Class<? extends IAsyncEvent<?>>) handler
+                            .getMember("java_class").asHostObject();
+                    short priority = (short) handler.getMember("priority").asInt();
+                    Value keyValue = handler.getMember("key");
+                    Function<CompletableFuture<IAsyncEvent<?>>, CompletableFuture<IAsyncEvent<?>>> listener = upstream -> upstream
+                            .thenCompose(event -> {
+                                CompletableFuture<IAsyncEvent<?>> future = new CompletableFuture<>();
+                                asyncContext.enqueue(index, event, future);
+                                return future;
+                            });
+                    if (keyValue.isNull()) {
+                        getEventRegistry().registerAsyncGlobal(priority, (Class) eventClass, (Function) listener);
+                    } else {
+                        Object key = keyValue.asHostObject();
+                        getEventRegistry().registerAsync(priority, (Class) eventClass, key, (Function) listener);
+                    }
+                    getLogger().atInfo().log("Registered async event handler %d for %s", index,
+                            eventClass.getSimpleName());
                 }
             } catch (Exception e) {
                 getLogger().atWarning().log("Error reading event handlers: %s", e.getMessage());

@@ -1,7 +1,8 @@
-from typing import Any
+import asyncio
+from typing import TYPE_CHECKING
 
 import java
-from pytale.events import on_event
+from pytale.events import on_async_event, on_event
 from pytale.plugin import (
     get_context,
     get_data_directory,
@@ -12,11 +13,17 @@ from pytale.plugin import (
     on_start,
 )
 
+if TYPE_CHECKING:
+    from java import JavaObject
+
 _AddPlayerToWorldEvent = java.type(
     "com.hypixel.hytale.server.core.event.events.player.AddPlayerToWorldEvent"
 )
 _PlayerReadyEvent = java.type(
     "com.hypixel.hytale.server.core.event.events.player.PlayerReadyEvent"
+)
+_PlayerChatEvent = java.type(
+    "com.hypixel.hytale.server.core.event.events.player.PlayerChatEvent"
 )
 
 print("=" * 60)
@@ -61,12 +68,24 @@ def on_plugin_shutdown() -> None:
 
 
 @on_event(_AddPlayerToWorldEvent)
-def handle_add_player_to_world(event: Any) -> None:
+def handle_add_player_to_world(event: "JavaObject") -> None:
     print(
         f"[EVENT/off-WorldThread] AddPlayerToWorldEvent: world={event.getWorld().getName()}"
     )
 
 
 @on_event(_PlayerReadyEvent)
-def handle_player_ready(event: Any) -> None:
+def handle_player_ready(event: "JavaObject") -> None:
     print(f"[EVENT/WorldThread] PlayerReadyEvent: player={event.getPlayer().getUuid()}")
+
+
+@on_async_event(_PlayerChatEvent)
+async def handle_player_chat_async(event: "JavaObject") -> None:
+    sender = event.getSender().getUsername()
+    original = event.getContent()
+    # Simulate async work (e.g. database lookup, moderation check).
+    await asyncio.sleep(0.05)
+    event.setContent(f"[async] {original}")
+    print(
+        f"[ASYNC-EVENT] PlayerChatEvent: {sender!r} said {original!r} → content prefixed"
+    )
