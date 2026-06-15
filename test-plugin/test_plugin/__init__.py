@@ -1,3 +1,5 @@
+import java
+from pytale.events import on_event
 from pytale.plugin import (
     get_context,
     get_data_directory,
@@ -7,6 +9,9 @@ from pytale.plugin import (
     on_shutdown,
     on_start,
 )
+
+_AddPlayerToWorldEvent = java.type("com.hypixel.hytale.server.core.event.events.player.AddPlayerToWorldEvent")
+_PlayerReadyEvent = java.type("com.hypixel.hytale.server.core.event.events.player.PlayerReadyEvent")
 
 print("=" * 60)
 print("pyTale Plugin Information")
@@ -47,3 +52,13 @@ def on_plugin_start() -> None:
 @on_shutdown
 def on_plugin_shutdown() -> None:
     print("[LIFECYCLE] Plugin shutting down!")
+
+
+@on_event(_AddPlayerToWorldEvent)
+def handle_add_player_to_world(event) -> None:
+    print(f"[EVENT/off-WorldThread] AddPlayerToWorldEvent: world={event.getWorld().getName()}")
+
+
+@on_event(_PlayerReadyEvent)
+def handle_player_ready(event) -> None:
+    print(f"[EVENT/WorldThread] PlayerReadyEvent: player={event.getPlayer().getUuid()}")
