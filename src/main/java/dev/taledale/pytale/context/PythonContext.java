@@ -124,14 +124,20 @@ public class PythonContext {
 
     public void close(boolean cancelIfExecuting) {
         if (context != null) {
-            lock.lock();
+            // cancelIfExecuting=true: context.close() cancels any running computation and is
+            // thread-safe by the GraalPy API contract — acquiring the lock would deadlock.
+            if (!cancelIfExecuting) {
+                lock.lock();
+            }
             try {
                 context.close(cancelIfExecuting);
                 logger.atInfo().log("Python context closed");
             } catch (Exception e) {
                 logger.atSevere().log("Error closing context: %s", e.getMessage());
             } finally {
-                lock.unlock();
+                if (!cancelIfExecuting) {
+                    lock.unlock();
+                }
             }
         }
     }

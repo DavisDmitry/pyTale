@@ -67,7 +67,7 @@ public abstract class AbstractPythonPlugin extends JavaPlugin {
         }
 
         if (generalContext != null) {
-            generalContext.close();
+            generalContext.close(true);
         }
 
         if (pythonEngine != null) {
