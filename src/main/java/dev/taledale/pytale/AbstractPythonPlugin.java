@@ -14,17 +14,12 @@ import org.graalvm.polyglot.Value;
 
 import javax.annotation.Nonnull;
 import java.util.List;
-import java.util.function.Consumer;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 
 public abstract class AbstractPythonPlugin extends JavaPlugin {
     private final AtomicReference<List<String>> wheelPaths = new AtomicReference<>();
     private Engine pythonEngine;
-    private ExecutorService generalExecutor;
     private PythonContext generalContext;
     private WorldContextManager worldContextManager;
 
@@ -39,12 +34,6 @@ public abstract class AbstractPythonPlugin extends JavaPlugin {
                     .option("engine.WarnInterpreterOnly", "false")
                     .build();
 
-            generalExecutor = Executors.newSingleThreadExecutor(r -> {
-                Thread t = new Thread(r, "PyTale-" + getManifest().getName() + "-General");
-                t.setDaemon(true);
-                return t;
-            });
-
             worldContextManager = new WorldContextManager(this);
 
             List<String> wheels = extractWheels(getPluginJarPath());
@@ -54,7 +43,7 @@ public abstract class AbstractPythonPlugin extends JavaPlugin {
                     this,
                     getLogger().getSubLogger("GeneralContext"),
                     ExecutionContext.GENERAL);
-            submitToGeneral(generalContext::init, true);
+            generalContext.init();
 
             readAndRegisterEventHandlers();
             executeLifecycleListeners("setup");
@@ -78,17 +67,7 @@ public abstract class AbstractPythonPlugin extends JavaPlugin {
         }
 
         if (generalContext != null) {
-            submitToGeneral(generalContext::close, true);
-
-            generalExecutor.shutdown();
-            try {
-                if (!generalExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
-                    generalExecutor.shutdownNow();
-                }
-            } catch (InterruptedException e) {
-                generalExecutor.shutdownNow();
-                Thread.currentThread().interrupt();
-            }
+            generalContext.close();
         }
 
         if (pythonEngine != null) {
@@ -103,20 +82,16 @@ public abstract class AbstractPythonPlugin extends JavaPlugin {
         if (ctx == null)
             return;
 
-        submitToGeneral(() -> {
-            ctx.enter();
+        generalContext.withContext(() -> {
             try {
-                Value bindings = ctx.getBindings("python");
-                bindings.putMember("__event", event);
+                ctx.getBindings("python").putMember("__event", event);
                 ctx.eval("python",
                         "from pytale.plugin._lifecycle import _execute_listeners\n" +
                                 "_execute_listeners(__event)");
             } catch (Exception e) {
                 getLogger().atWarning().log("Error executing %s listeners: %s", event, e.getMessage());
-            } finally {
-                ctx.leave();
             }
-        }, true);
+        });
     }
 
     @SuppressWarnings({ "unchecked", "rawtypes", "null" })
@@ -127,8 +102,7 @@ public abstract class AbstractPythonPlugin extends JavaPlugin {
         if (ctx == null)
             return;
 
-        submitToGeneral(() -> {
-            ctx.enter();
+        generalContext.withContext(() -> {
             try {
                 ctx.eval("python",
                         "import pytale.events._registry as __reg\n" +
@@ -153,10 +127,8 @@ public abstract class AbstractPythonPlugin extends JavaPlugin {
                 }
             } catch (Exception e) {
                 getLogger().atWarning().log("Error reading event handlers: %s", e.getMessage());
-            } finally {
-                ctx.leave();
             }
-        }, true);
+        });
     }
 
     private void dispatchToCurrentThread(int index, IEvent<?> event) {
@@ -164,49 +136,21 @@ public abstract class AbstractPythonPlugin extends JavaPlugin {
                 .filter(World::isInThread)
                 .findFirst()
                 .orElse(null);
-        if (world == null) {
-            getLogger().atWarning().log("No world for current thread, skipping event handler %d", index);
-            return;
-        }
-        WorldPythonContext context = worldContextManager.getContext(world);
-        if (context == null) {
-            getLogger().atWarning().log("No context for world %s, skipping event handler %d", world.getName(),
-                    index);
-            return;
-        }
-        context.invokeEventHandler(index, event);
-    }
-
-    public void submitToGeneral(Runnable task) {
-        submitToGeneral(task, false);
-    }
-
-    private void submitToGeneral(Runnable task, boolean await) {
-        if (generalExecutor == null)
-            return;
-
-        CountDownLatch latch = await ? new CountDownLatch(1) : null;
-        generalExecutor.submit(() -> {
-            ClassLoader prev = Thread.currentThread().getContextClassLoader();
-            try {
-                Thread.currentThread().setContextClassLoader(PyTale.get().getClass().getClassLoader());
-                task.run();
-            } finally {
-                Thread.currentThread().setContextClassLoader(prev);
-                if (latch != null)
-                    latch.countDown();
+        if (world != null) {
+            WorldPythonContext context = worldContextManager.getContext(world);
+            if (context == null) {
+                getLogger().atWarning().log("No context for world %s, skipping event handler %d", world.getName(),
+                        index);
+                return;
             }
-        });
-
-        if (latch != null) {
-            try {
-                if (!latch.await(5, TimeUnit.SECONDS)) {
-                    getLogger().atWarning().log("Task on general executor timed out");
-                }
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
+            context.invokeEventHandler(index, event);
+            return;
         }
+        if (generalContext == null) {
+            getLogger().atWarning().log("General context not initialized, skipping event handler %d", index);
+            return;
+        }
+        generalContext.invokeEventHandler(index, event);
     }
 
     public Engine getPythonEngine() {

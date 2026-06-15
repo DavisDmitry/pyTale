@@ -1,21 +1,24 @@
 package dev.taledale.pytale.context;
 
+import com.hypixel.hytale.event.IEvent;
 import com.hypixel.hytale.logger.HytaleLogger;
 import dev.taledale.pytale.AbstractPythonPlugin;
 import dev.taledale.pytale.ExecutionContext;
+import dev.taledale.pytale.PyTale;
 import org.graalvm.polyglot.Context;
-import org.graalvm.polyglot.Engine;
 import org.graalvm.polyglot.HostAccess;
 import org.graalvm.polyglot.PolyglotException;
 import org.graalvm.polyglot.Value;
 
 import java.util.List;
+import java.util.concurrent.locks.ReentrantLock;
 
 public class PythonContext {
     protected final AbstractPythonPlugin plugin;
     protected final HytaleLogger logger;
     protected final ExecutionContext executionContext;
     protected Context context;
+    private final ReentrantLock lock = new ReentrantLock();
 
     public PythonContext(
             AbstractPythonPlugin plugin,
@@ -61,18 +64,54 @@ public class PythonContext {
         logger.atInfo().log("Python context initialized");
     }
 
+    /**
+     * Acquires the context lock, sets the correct classloader, enters the GraalPy context,
+     * runs {@code task}, then leaves and releases. Safe to call from any thread.
+     */
+    public void withContext(Runnable task) {
+        ClassLoader prev = Thread.currentThread().getContextClassLoader();
+        Thread.currentThread().setContextClassLoader(PyTale.get().getClass().getClassLoader());
+        lock.lock();
+        try {
+            context.enter();
+            try {
+                task.run();
+            } finally {
+                context.leave();
+            }
+        } finally {
+            lock.unlock();
+            Thread.currentThread().setContextClassLoader(prev);
+        }
+    }
+
     public void init() {
         try {
             buildContext();
-            context.enter();
-            doInit();
+            withContext(this::doInit);
         } catch (PolyglotException e) {
             logger.atWarning().log("Python error during initialization: %s", e.getMessage());
         } catch (Exception e) {
             logger.atSevere().log("Failed to initialize context: %s", e.getMessage());
-        } finally {
-            context.leave();
         }
+    }
+
+    public void invokeEventHandler(int index, IEvent<?> event) {
+        if (context == null) {
+            logger.atWarning().log("Context not initialized, cannot invoke event handler");
+            return;
+        }
+        withContext(() -> {
+            try {
+                context.getBindings("python").putMember("__event_index", index);
+                context.getBindings("python").putMember("__event_obj", event);
+                context.eval("python",
+                        "from pytale.events._registry import _execute_handler\n" +
+                                "_execute_handler(__event_index, __event_obj)");
+            } catch (PolyglotException e) {
+                logger.atWarning().log("Python error in event handler %d: %s", index, e.getMessage());
+            }
+        });
     }
 
     public Context getContext() {
@@ -85,11 +124,14 @@ public class PythonContext {
 
     public void close(boolean cancelIfExecuting) {
         if (context != null) {
+            lock.lock();
             try {
                 context.close(cancelIfExecuting);
                 logger.atInfo().log("Python context closed");
             } catch (Exception e) {
                 logger.atSevere().log("Error closing context: %s", e.getMessage());
+            } finally {
+                lock.unlock();
             }
         }
     }
