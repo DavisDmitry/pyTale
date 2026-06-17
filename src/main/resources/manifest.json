@@ -5,6 +5,6 @@
     "Authors": [],
     "DisabledByDefault": false,
     "IncludesAssetPack": false,
-    "ServerVersion": "=0.5.4",
+    "ServerVersion": "=0.5.6",
     "Main": "dev.taledale.pytale.PyTale"
 }

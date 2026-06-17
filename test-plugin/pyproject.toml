@@ -8,7 +8,7 @@ version = "1.0.0"
 description = "Test plugin for pyTale"
 requires-python = ">=3.12,<3.13"
 dependencies = [
-    "pytale==0.5.4-1",
+    "pytale==0.5.6-1",
 ]
 
 [tool.hatch.build.targets.wheel]

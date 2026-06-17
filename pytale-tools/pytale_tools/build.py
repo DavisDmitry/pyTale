@@ -287,7 +287,7 @@ class PluginBuilder:
             "IncludesAssetPack": False,
             "Dependencies": {"TaleDale:PyTale": ">=0.0.1"},
             "OptionalDependencies": {},
-            "ServerVersion": "=0.5.4",
+            "ServerVersion": "=0.5.6",
             "Main": "dev.taledale.pytale.PythonPlugin",
         }
         manifest_path.write_text(json.dumps(manifest, indent=4))
