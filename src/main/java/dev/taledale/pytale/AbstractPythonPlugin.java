@@ -15,22 +15,63 @@ import org.graalvm.polyglot.Engine;
 import org.graalvm.polyglot.Value;
 
 import javax.annotation.Nonnull;
-import java.util.List;
+import java.net.URL;
+import java.net.URLClassLoader;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
 public abstract class AbstractPythonPlugin extends JavaPlugin {
-    private final AtomicReference<List<String>> wheelPaths = new AtomicReference<>();
     private Engine pythonEngine;
     private PythonContext generalContext;
     private AsyncPythonContext asyncContext;
     private WorldContextManager worldContextManager;
+    private URLClassLoader resourceClassLoader;
+    private Class<?> resourceAnchorClass;
 
     public AbstractPythonPlugin(@Nonnull JavaPluginInit init) {
         super(init);
+    }
+
+    /**
+     * Builds a class loader whose resources are the plugin jar, used by the GraalPy
+     * {@link org.graalvm.python.embedding.VirtualFileSystem} to locate the embedded venv.
+     *
+     * <p>We cannot reuse {@code getClass().getClassLoader()}: the universal {@code PythonPlugin}
+     * loader class also lives in the framework jar, so in a dev setup (framework on the server
+     * classpath) it is loaded by the server class loader, which cannot see the plugin jar's VFS
+     * resources. Instead we load an anchor class child-first from the plugin jar itself
+     * ({@link #getFile()}), so its class loader's {@code getResources} resolves the VFS metadata
+     * regardless of how the framework is deployed.
+     */
+    private void initResourceAnchor() throws Exception {
+        URL jarUrl = getFile().toUri().toURL();
+        resourceClassLoader = new URLClassLoader(new URL[] { jarUrl }, getClass().getClassLoader()) {
+            @Override
+            protected Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
+                synchronized (getClassLoadingLock(name)) {
+                    Class<?> c = findLoadedClass(name);
+                    if (c == null) {
+                        try {
+                            c = findClass(name); // prefer the plugin jar copy
+                        } catch (ClassNotFoundException e) {
+                            return super.loadClass(name, resolve); // fall back to parent (framework)
+                        }
+                    }
+                    if (resolve) {
+                        resolveClass(c);
+                    }
+                    return c;
+                }
+            }
+        };
+        resourceAnchorClass = resourceClassLoader.loadClass(getClass().getName());
+    }
+
+    /** Class whose class loader resolves this plugin's embedded VFS resources. */
+    public Class<?> getResourceAnchorClass() {
+        return resourceAnchorClass;
     }
 
     @Override
@@ -40,10 +81,9 @@ public abstract class AbstractPythonPlugin extends JavaPlugin {
                     .option("engine.WarnInterpreterOnly", "false")
                     .build();
 
-            worldContextManager = new WorldContextManager(this);
+            initResourceAnchor();
 
-            List<String> wheels = extractWheels(getPluginJarPath());
-            getLogger().atInfo().log("Found %d wheel(s)", wheels.size());
+            worldContextManager = new WorldContextManager(this);
 
             generalContext = new PythonContext(
                     this,
@@ -89,6 +129,16 @@ public abstract class AbstractPythonPlugin extends JavaPlugin {
 
         if (pythonEngine != null) {
             pythonEngine.close();
+        }
+
+        // Closed last: the VFS reads resources lazily through this loader during the contexts'
+        // lifetime.
+        if (resourceClassLoader != null) {
+            try {
+                resourceClassLoader.close();
+            } catch (Exception e) {
+                getLogger().atWarning().log("Error closing resource class loader: %s", e.getMessage());
+            }
         }
     }
 
@@ -225,46 +275,5 @@ public abstract class AbstractPythonPlugin extends JavaPlugin {
 
     public Context getGeneralContext() {
         return generalContext != null ? generalContext.getContext() : null;
-    }
-
-    public List<String> getWheelPaths() {
-        List<String> paths = wheelPaths.get();
-        return paths != null ? paths : new java.util.ArrayList<>();
-    }
-
-    private java.nio.file.Path getPluginJarPath() throws Exception {
-        java.nio.file.Path pluginFile = getFile();
-        if (pluginFile == null || !java.nio.file.Files.exists(pluginFile)) {
-            throw new Exception("Cannot determine plugin location");
-        }
-        return pluginFile;
-    }
-
-    private List<String> extractWheels(java.nio.file.Path pluginJarPath) throws Exception {
-        List<String> wheelPathsList = new java.util.ArrayList<>();
-        java.nio.file.Path tempDir = java.nio.file.Files.createTempDirectory(
-                "pytale-wheels-");
-
-        try (java.util.zip.ZipFile zf = new java.util.zip.ZipFile(pluginJarPath.toFile())) {
-            zf.stream()
-                    .filter(entry -> entry.getName().endsWith(".whl") && !entry.isDirectory())
-                    .forEach(entry -> {
-                        try {
-                            java.nio.file.Path wheelDest = tempDir.resolve(entry.getName());
-                            try (java.io.InputStream is = zf.getInputStream(entry)) {
-                                java.nio.file.Files.copy(is, wheelDest,
-                                        java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-                            }
-                            wheelPathsList.add(wheelDest.toAbsolutePath().toString());
-                            getLogger().atInfo().log("Extracted wheel: %s", wheelDest);
-                        } catch (Exception e) {
-                            getLogger().atWarning().log("Failed to extract wheel %s: %s",
-                                    entry.getName(), e.getMessage());
-                        }
-                    });
-        }
-
-        wheelPaths.set(wheelPathsList);
-        return wheelPathsList;
     }
 }

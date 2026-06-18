@@ -7,8 +7,9 @@ repositories {
 }
 
 dependencies {
-    implementation("org.graalvm.polyglot:polyglot:24.2.1")
-    implementation("org.graalvm.polyglot:python-community:24.2.1")
+    implementation("org.graalvm.polyglot:polyglot:25.0.3")
+    implementation("org.graalvm.polyglot:python-community:25.0.3")
+    implementation("org.graalvm.python:python-embedding:25.0.3")
 }
 
 tasks.register("extractPythonPluginClass") {

@@ -9,8 +9,9 @@ import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.HostAccess;
 import org.graalvm.polyglot.PolyglotException;
 import org.graalvm.polyglot.Value;
+import org.graalvm.python.embedding.GraalPyResources;
+import org.graalvm.python.embedding.VirtualFileSystem;
 
-import java.util.List;
 import java.util.concurrent.locks.ReentrantLock;
 
 public class PythonContext {
@@ -30,24 +31,34 @@ public class PythonContext {
     }
 
     protected void buildContext() {
-        this.context = Context.newBuilder("python")
+        // The plugin's Python code and its dependencies are pip-installed into a venv that is
+        // bundled in the plugin jar under the GraalPy Virtual Filesystem resource root
+        // "GRAALPY-VFS/TaleDale/<module>". GraalPyResources points sys.path/sys.executable at that
+        // venv, so packages import directly from the jar with no temp extraction (only native libs
+        // are extracted on demand by the VFS). The resource-loading class is anchored to the plugin
+        // jar (see AbstractPythonPlugin#getResourceAnchorClass) so the VFS metadata resolves
+        // regardless of how the framework is deployed.
+        VirtualFileSystem vfs = VirtualFileSystem.newBuilder()
+                .resourceDirectory("GRAALPY-VFS/TaleDale/" + moduleName())
+                .resourceLoadingClass(plugin.getResourceAnchorClass())
+                .build();
+
+        // GraalPyResources.contextBuilder configures allowAllAccess(false) plus the VFS filesystem;
+        // we must NOT call allowAllAccess(true) (it would replace the VFS with IOAccess.ALL). We do
+        // re-add allowHostClassLookup, which pyTale needs so Python can resolve Java event classes.
+        this.context = GraalPyResources.contextBuilder(vfs)
                 .engine(plugin.getPythonEngine())
-                .allowAllAccess(true)
                 .allowHostAccess(HostAccess.ALL)
                 .allowHostClassLookup(_ -> true)
                 .build();
     }
 
-    protected void doInit() {
-        List<String> wheelPaths = plugin.getWheelPaths();
-        if (!wheelPaths.isEmpty()) {
-            StringBuilder sb = new StringBuilder("import sys\n");
-            for (String path : wheelPaths) {
-                sb.append(String.format("sys.path.insert(0, '%s')\n", path));
-            }
-            context.eval("python", sb.toString());
-        }
+    /** Python module / VFS resource name for this plugin (manifest name with '-' replaced by '_'). */
+    protected String moduleName() {
+        return plugin.getManifest().getName().replace("-", "_");
+    }
 
+    protected void doInit() {
         Value bindings = context.getBindings("python");
         bindings.putMember("__identifier", plugin.getIdentifier());
         bindings.putMember("__manifest", plugin.getManifest());
@@ -61,8 +72,7 @@ public class PythonContext {
 
         initContextBindings(bindings);
 
-        String moduleName = plugin.getManifest().getName().replace("-", "_");
-        context.eval("python", "import " + moduleName);
+        context.eval("python", "import " + moduleName());
 
         logger.atInfo().log("Python context initialized");
     }

@@ -1,10 +1,37 @@
-"""Plugin builder for PyTale"""
+"""Plugin builder for PyTale.
 
+Produces a Hytale plugin JAR in the GraalPy Virtual Filesystem (VFS) layout under
+``GRAALPY-VFS/<group>/<module>``: the plugin's own code goes into ``src/`` (GraalPy's PYTHONPATH)
+and its third-party dependencies into ``venv/``. Both are built by pip-installing the plugin
+wheel into a venv, then relocating the plugin's packages from site-packages into ``src/``. At
+runtime the PyTale framework mounts this through a ``VirtualFileSystem`` so Python imports
+resolve directly from the jar (no temp extraction).
+
+The build must run under GraalPy itself (``sys.executable`` is graalpy) so that the venv and its
+``site-packages`` are laid out by graalpy's own pip and match the runtime interpreter version.
+"""
+
+import hashlib
+import json
 import shutil
 import subprocess
-import tempfile
+import sys
 import zipfile
 from pathlib import Path
+
+# Must match the resource root used by the Java runtime in PythonContext.buildContext().
+VFS_GROUP = "TaleDale"
+
+# Top-level site-packages entries that venv/pip seed but are build-time only; never bundled.
+_BUILD_ONLY = {
+    "pip",
+    "setuptools",
+    "pkg_resources",
+    "_distutils_hack",
+    "wheel",
+    "distutils-precedence.pth",
+}
+_BUILD_ONLY_DISTINFO_PREFIXES = ("pip-", "setuptools-", "wheel-")
 
 
 class PluginBuilder:
@@ -12,12 +39,19 @@ class PluginBuilder:
         self,
         wheel_path: Path,
         requirements_path: Path | None = None,
-        cache_dir: Path | None = None,
         additional_wheels: list[Path] | None = None,
     ):
+        if sys.implementation.name != "graalpy":
+            raise RuntimeError(
+                "pytale-tools must run under GraalPy so the bundled venv matches the runtime "
+                f"interpreter (current interpreter: {sys.implementation.name}). "
+                "Run it from a GraalPy environment, e.g. `uv run pytale-tools ...`."
+            )
+
         self.wheel_path = wheel_path.resolve()
         if not self.wheel_path.exists():
             raise FileNotFoundError(f"Wheel not found: {self.wheel_path}")
+
         self.requirements_path = (
             requirements_path.resolve() if requirements_path else None
         )
@@ -26,7 +60,6 @@ class PluginBuilder:
                 f"Requirements file not found: {self.requirements_path}"
             )
 
-        # Validate and store additional wheels
         self.additional_wheels = []
         if additional_wheels:
             for wheel in additional_wheels:
@@ -35,22 +68,19 @@ class PluginBuilder:
                     raise FileNotFoundError(f"Additional wheel not found: {wheel}")
                 self.additional_wheels.append(wheel_resolved)
 
-        # Set cache directory: explicit > project .pytale > user home
-        if cache_dir:
-            self.cache_dir = cache_dir.resolve()
-        elif (self.wheel_path.parent / ".pytale" / "wheels").exists() or (
-            self.wheel_path.parent.parent / ".pytale" / "wheels"
-        ).exists():
-            # Look for .pytale in wheel's parent or grandparent (project root)
-            project_cache = self.wheel_path.parent / ".pytale" / "wheels"
-            if not project_cache.exists():
-                project_cache = self.wheel_path.parent.parent / ".pytale" / "wheels"
-            self.cache_dir = project_cache
-        else:
-            # Default to user home cache
-            self.cache_dir = Path.home() / ".cache" / "pytale" / "wheels"
-
         self.metadata = self._read_metadata_from_wheel()
+        self.module_name = self.metadata["name"].replace("-", "_")
+
+        # Persistent per-plugin venv lives in the project's .pytale directory; reused across
+        # builds and only rebuilt when the inputs change.
+        self.venv_dir = self._find_project_dir() / ".pytale" / "venv" / self.module_name
+
+    def _find_project_dir(self) -> Path:
+        """Walk up from the wheel to the project root (dir with .pytale or pyproject.toml)."""
+        for d in [self.wheel_path.parent, *self.wheel_path.parents]:
+            if (d / ".pytale").exists() or (d / "pyproject.toml").exists():
+                return d
+        return Path.cwd()
 
     def _read_metadata_from_wheel(self) -> dict[str, str]:
         """Extract metadata from wheel's dist-info/METADATA"""
@@ -80,13 +110,186 @@ class PluginBuilder:
                     description = line.split(":", 1)[1].strip()
 
             if not name:
-                raise ValueError(f"Package name not found in wheel metadata")
+                raise ValueError("Package name not found in wheel metadata")
 
             return {
                 "name": name,
                 "version": version or "1.0.0",
                 "description": description,
             }
+
+    # ------------------------------------------------------------------ venv
+
+    def _venv_python(self) -> Path:
+        return self.venv_dir / "bin" / "python"
+
+    def _inputs_hash(self) -> str:
+        """Hash the build inputs so the venv is only rebuilt when something actually changes."""
+        h = hashlib.sha256()
+        h.update(sys.version.encode())
+        for wheel in [self.wheel_path, *self.additional_wheels]:
+            h.update(wheel.name.encode())
+            h.update(wheel.read_bytes())
+        if self.requirements_path:
+            h.update(self.requirements_path.read_bytes())
+        return h.hexdigest()
+
+    def _find_links_args(self) -> list[str]:
+        """Auto --find-links for the dirs holding the input wheels / requirements file so that
+        local-only dependencies (e.g. the pytale wheel) resolve without extra flags."""
+        dirs: list[Path] = [self.wheel_path.parent]
+        dirs.extend(w.parent for w in self.additional_wheels)
+        if self.requirements_path:
+            dirs.append(self.requirements_path.parent)
+
+        args: list[str] = []
+        seen = set()
+        for d in dirs:
+            key = str(d)
+            if key not in seen:
+                seen.add(key)
+                args += ["--find-links", key]
+        return args
+
+    def _sync_venv(self) -> None:
+        """Create the venv and install the plugin + dependencies, reusing it if inputs match."""
+        marker = self.venv_dir / ".pytale-inputs"
+        wanted = self._inputs_hash()
+        if marker.exists() and marker.read_text() == wanted:
+            print(f"✓ Reusing venv: {self.venv_dir}")
+            return
+
+        if self.venv_dir.exists():
+            shutil.rmtree(self.venv_dir)
+        self.venv_dir.parent.mkdir(parents=True, exist_ok=True)
+
+        print(f"Creating venv: {self.venv_dir}")
+        subprocess.run(
+            [sys.executable, "-m", "venv", str(self.venv_dir)],
+            check=True,
+            capture_output=True,
+        )
+
+        cmd = [
+            str(self._venv_python()),
+            "-m",
+            "pip",
+            "install",
+            "--disable-pip-version-check",
+            "--no-input",
+            *self._find_links_args(),
+            str(self.wheel_path),
+        ]
+        if self.requirements_path:
+            cmd += ["-r", str(self.requirements_path)]
+        cmd += [str(w) for w in self.additional_wheels]
+
+        print("Installing plugin + dependencies into venv...")
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            raise RuntimeError(f"pip install failed:\n{result.stdout}\n{result.stderr}")
+
+        marker.write_text(wanted)
+
+    # ------------------------------------------------------------------ VFS layout
+
+    def _venv_site_packages(self) -> Path:
+        matches = sorted(self.venv_dir.glob("lib/python*/site-packages"))
+        if not matches:
+            raise RuntimeError(f"No site-packages found in venv {self.venv_dir}")
+        return matches[0]
+
+    @staticmethod
+    def _is_build_only(name: str) -> bool:
+        if name in _BUILD_ONLY:
+            return True
+        if name.endswith(".dist-info") and name.startswith(_BUILD_ONLY_DISTINFO_PREFIXES):
+            return True
+        return False
+
+    def _vfs_root_rel(self) -> str:
+        """Resource path of the VFS root inside the jar. Must match the Java runtime."""
+        return f"GRAALPY-VFS/{VFS_GROUP}/{self.module_name}"
+
+    def _plugin_wheel_layout(self) -> tuple[set[str], str | None]:
+        """Top-level importable names and the dist-info dir name of the plugin wheel."""
+        top_level: set[str] = set()
+        dist_info: str | None = None
+        with zipfile.ZipFile(self.wheel_path) as whl:
+            for name in whl.namelist():
+                first = name.split("/")[0]
+                if first.endswith(".dist-info"):
+                    dist_info = first
+                elif not first.endswith(".data"):
+                    top_level.add(first)
+        return top_level, dist_info
+
+    @staticmethod
+    def _ignore_pycache(src: str, names: list[str]) -> set[str]:
+        return {n for n in names if n == "__pycache__"}
+
+    def _copy_vfs(self, temp_dir: Path) -> str:
+        """Lay out the GraalPy VFS under the jar resource root: the plugin's own code goes into
+        ``src/`` (on PYTHONPATH) and third-party dependencies stay in ``venv/``. Returns the VFS
+        root rel path."""
+        vfs_root_rel = self._vfs_root_rel()
+        vfs_root = temp_dir / vfs_root_rel
+        dest_venv = vfs_root / "venv"
+        dest_venv.mkdir(parents=True, exist_ok=True)
+
+        # pyvenv.cfg marks the directory as a venv so GraalPy discovers site-packages from it.
+        shutil.copy2(self.venv_dir / "pyvenv.cfg", dest_venv / "pyvenv.cfg")
+
+        # GraalPyResources sets python.Executable to <venv>/bin/python; provide a placeholder so
+        # that virtual path resolves inside the read-only VFS.
+        bin_dir = dest_venv / "bin"
+        bin_dir.mkdir(parents=True, exist_ok=True)
+        (bin_dir / "python").write_bytes(b"")
+
+        plugin_top_level, plugin_dist_info = self._plugin_wheel_layout()
+        site_packages = self._venv_site_packages()
+        dest_sp = dest_venv / "lib" / site_packages.parent.name / "site-packages"
+
+        def ignore(src: str, names: list[str]) -> set[str]:
+            skip = {n for n in names if n == "__pycache__" or self._is_build_only(n)}
+            # The plugin's own package(s) live in src/, not the venv; drop them at the
+            # site-packages root only (not from same-named subdirs of dependencies).
+            if Path(src) == site_packages:
+                skip |= {n for n in names if n in plugin_top_level or n == plugin_dist_info}
+            return skip
+
+        shutil.copytree(site_packages, dest_sp, ignore=ignore)
+        print(f"✓ Bundled dependencies -> {vfs_root_rel}/venv")
+
+        # The plugin's own source goes into src/ (PYTHONPATH), taken from the installed venv copy.
+        dest_src = vfs_root / "src"
+        dest_src.mkdir(parents=True, exist_ok=True)
+        for name in sorted(plugin_top_level):
+            installed = site_packages / name
+            if installed.is_dir():
+                shutil.copytree(installed, dest_src / name, ignore=self._ignore_pycache)
+            elif installed.exists():  # single-module plugin, e.g. foo.py
+                shutil.copy2(installed, dest_src / name)
+            else:
+                raise RuntimeError(
+                    f"Plugin top-level '{name}' not found in installed venv {site_packages}"
+                )
+        print(f"✓ Bundled plugin source -> {vfs_root_rel}/src")
+        return vfs_root_rel
+
+    def _write_fileslist(self, temp_dir: Path, vfs_root_rel: str) -> None:
+        """Write GraalPy's VFS index. Each line is an absolute resource path; directories end
+        with '/'. The VirtualFileSystem reads this to enumerate files embedded in the jar."""
+        vfs_root = temp_dir / vfs_root_rel
+        lines = []
+        for path in sorted(vfs_root.rglob("*")):
+            rel = path.relative_to(temp_dir).as_posix()
+            lines.append("/" + rel + ("/" if path.is_dir() else ""))
+
+        (vfs_root / "fileslist.txt").write_text("\n".join(lines) + "\n")
+        print(f"✓ Wrote {vfs_root_rel}/fileslist.txt ({len(lines)} entries)")
+
+    # ------------------------------------------------------------------ loader + manifest + jar
 
     def _copy_loader_class(self, temp_dir: Path) -> str:
         """Copy pre-compiled PythonPlugin.class from resources"""
@@ -97,189 +300,20 @@ class PluginBuilder:
                 f"Build PyTale first with: ./gradlew jar"
             )
 
-        # Create package directory structure
         pkg_dir = temp_dir / "dev" / "taledale" / "pytale"
         pkg_dir.mkdir(parents=True, exist_ok=True)
-
-        # Copy class file to temp directory
         shutil.copy2(class_file, pkg_dir / "PythonPlugin.class")
-
         return "dev.taledale.pytale.PythonPlugin"
 
     def _find_python_plugin_class(self) -> Path:
         """Find pre-extracted PythonPlugin.class in pytale-tools resources"""
-        pytale_tools_dir = Path(__file__).parent
-        return pytale_tools_dir / "resources" / "PythonPlugin.class"
-
-    def _ensure_cache_dir(self) -> None:
-        """Ensure cache directory exists"""
-        self.cache_dir.mkdir(parents=True, exist_ok=True)
-
-    def _parse_requirements(self) -> list[str]:
-        """Parse requirements.txt and return list of package specs (without hashes)"""
-        if not self.requirements_path:
-            return []
-
-        requirements = []
-        with open(self.requirements_path, "r") as f:
-            content = f.read()
-
-        # Handle line continuations (backslash at end of line)
-        current_line = ""
-        for line in content.split("\n"):
-            line = line.rstrip()
-            if line.endswith("\\"):
-                current_line += line[:-1].strip() + " "
-            else:
-                current_line += line
-                current_line = current_line.strip()
-
-                # Skip comments, empty lines, and editable installs
-                if (
-                    not current_line
-                    or current_line.startswith("#")
-                    or current_line.startswith("-e ")
-                ):
-                    current_line = ""
-                    continue
-
-                # Extract spec without hashes (everything before --hash)
-                spec = current_line.split("--hash")[0].strip()
-                if spec:
-                    requirements.append(spec)
-                current_line = ""
-
-        return requirements
-
-    def _get_cached_wheel(self, package_spec: str) -> Path | None:
-        """Check if wheel for package spec exists in cache"""
-        self._ensure_cache_dir()
-
-        # Extract package name from spec (e.g., "tomli==2.0.1" -> "tomli")
-        package_name = (
-            package_spec.split("==")[0]
-            .split(">")[0]
-            .split("<")[0]
-            .split("!")[0]
-            .split("~")[0]
-            .strip()
-        )
-
-        # Look for any wheel matching this package name
-        for wheel_file in self.cache_dir.glob("*.whl"):
-            if wheel_file.name.startswith(package_name.replace("-", "_")):
-                print(f"✓ Using cached wheel: {wheel_file.name}")
-                return wheel_file
-        return None
-
-    def _cache_wheel(self, wheel_path: Path) -> None:
-        """Copy wheel to cache directory"""
-        self._ensure_cache_dir()
-        dest = self.cache_dir / wheel_path.name
-        shutil.copy2(wheel_path, dest)
-
-    def _download_dependencies(self) -> list[Path]:
-        """Download wheels for all dependencies from requirements.txt"""
-        if not self.requirements_path:
-            return []
-
-        self._ensure_cache_dir()
-        requirements = self._parse_requirements()
-        if not requirements:
-            return []
-
-        print(f"Downloading dependencies from {self.requirements_path.name}...")
-
-        try:
-            import sys
-
-            subprocess.run(
-                [
-                    sys.executable,
-                    "-m",
-                    "pip",
-                    "download",
-                    "-r",
-                    str(self.requirements_path),
-                    "--only-binary=:all:",
-                    "--no-deps",
-                    "-d",
-                    str(self.cache_dir),
-                ],
-                check=True,
-                capture_output=True,
-            )
-        except subprocess.CalledProcessError as e:
-            raise RuntimeError(
-                f"Failed to download dependencies: {e.stderr.decode() if e.stderr else str(e)}"
-            )
-
-        # Match wheels to requirements (find wheels for each required package)
-        wheel_paths = []
-        for req_spec in requirements:
-            # Extract package name and version from spec
-            # e.g., "tomli==2.4.1" -> name="tomli", version="2.4.1"
-            if "==" in req_spec:
-                req_name, req_version = req_spec.split("==", 1)
-                req_name = req_name.strip()
-                req_version = req_version.strip()
-            else:
-                # For specs without ==, just use the whole thing as name
-                req_name = req_spec.strip()
-                req_version = None
-
-            # Find the wheel matching this package name and version in cache
-            found = False
-            for wheel_file in self.cache_dir.glob(f"{req_name.replace('-', '_')}*.whl"):
-                # Extract version from wheel filename
-                # Format: {name}-{version}-{python}-{abi}-{platform}.whl
-                wheel_name_parts = wheel_file.name.split("-")
-                if len(wheel_name_parts) >= 2:
-                    wheel_version = wheel_name_parts[1]
-
-                    # Check version matches if required
-                    if req_version and wheel_version != req_version:
-                        continue
-
-                    print(f"✓ Downloaded: {wheel_file.name}")
-                    wheel_paths.append(wheel_file)
-                    found = True
-                    break
-
-            if not found:
-                raise FileNotFoundError(f"Wheel not found for {req_spec}")
-
-        return wheel_paths
-
-    def _copy_all_wheels(
-        self, additional_wheel_paths: list[Path], temp_dir: Path
-    ) -> None:
-        """Copy main wheel, dependency wheels, and additional wheels to JAR root"""
-        # Copy main wheel
-        wheel_name = self.wheel_path.name
-        dest_wheel = temp_dir / wheel_name
-        shutil.copy2(self.wheel_path, dest_wheel)
-        print(f"✓ Copied wheel: {wheel_name}")
-
-        # Copy dependency wheels from requirements
-        for wheel_path in additional_wheel_paths:
-            dest = temp_dir / wheel_path.name
-            shutil.copy2(wheel_path, dest)
-            print(f"✓ Copied wheel: {wheel_path.name}")
-
-        # Copy additional wheels from -w argument
-        for wheel_path in self.additional_wheels:
-            dest = temp_dir / wheel_path.name
-            shutil.copy2(wheel_path, dest)
-            print(f"✓ Copied wheel: {wheel_path.name}")
+        return Path(__file__).parent / "resources" / "PythonPlugin.class"
 
     def _create_manifest_json(self, temp_dir: Path) -> Path:
         """Create manifest.json for Hytale"""
-        import json
-
         manifest_path = temp_dir / "manifest.json"
         manifest = {
-            "Group": "TaleDale",
+            "Group": VFS_GROUP,
             "Name": self.metadata["name"],
             "Version": self.metadata["version"],
             "Authors": [],
@@ -294,44 +328,29 @@ class PluginBuilder:
         return manifest_path
 
     def _create_jar(self, temp_dir: Path, output_path: Path) -> Path:
-        """Create JAR from temp directory, excluding build artifacts"""
+        """Create JAR from temp directory"""
         output_path.parent.mkdir(parents=True, exist_ok=True)
-
-        # Directories to exclude from JAR
-        exclude_dirs = {"src", "classes"}
-
         with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as jar:
             for item in temp_dir.rglob("*"):
                 if item.is_file():
-                    # Skip files in excluded directories
-                    parts = item.relative_to(temp_dir).parts
-                    if parts and parts[0] in exclude_dirs:
-                        continue
-                    arcname = str(item.relative_to(temp_dir))
-                    jar.write(item, arcname=arcname)
-
+                    jar.write(item, arcname=str(item.relative_to(temp_dir)))
         return output_path
 
     def build(self, output_path: Path) -> Path:
         """Build plugin JAR"""
         output_path = output_path.resolve()
 
+        self._sync_venv()
+
+        import tempfile
+
         with tempfile.TemporaryDirectory() as temp_dir_str:
             temp_dir = Path(temp_dir_str)
 
-            # Copy universal PythonPlugin loader class
             self._copy_loader_class(temp_dir)
-
-            # Create manifest.json
             self._create_manifest_json(temp_dir)
-
-            # Download and copy wheels
-            dependency_wheels = (
-                self._download_dependencies() if self.requirements_path else []
-            )
-            self._copy_all_wheels(dependency_wheels, temp_dir)
-
-            # Create JAR
+            vfs_root_rel = self._copy_vfs(temp_dir)
+            self._write_fileslist(temp_dir, vfs_root_rel)
             self._create_jar(temp_dir, output_path)
 
             print(f"✓ Plugin JAR created: {output_path}")
