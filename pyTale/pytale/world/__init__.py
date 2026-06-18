@@ -4,4 +4,4 @@ from pytale.world._types import (
     WorldConfig,
 )
 from pytale.world._world import get_world
-from pytale.world.errors import ChunkNotLoadedError
+from pytale.world.errors import ChunkNotLoadedError, NotInWorldThreadError

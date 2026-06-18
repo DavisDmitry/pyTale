@@ -15,7 +15,8 @@ from pytale.plugin import (
     on_shutdown,
     on_start,
 )
-from pytale.world import ChunkNotLoadedError, get_world
+from pytale.universe import get_universe
+from pytale.world import ChunkNotLoadedError, NotInWorldThreadError, get_world
 
 if TYPE_CHECKING:
     from java import JavaObject
@@ -74,6 +75,16 @@ def on_plugin_setup() -> None:
     print(f"[LIFECYCLE] Plugin setup! state={state.name}")
     assert state == PluginState.SETUP, f"Expected SETUP in @on_setup, got {state.name}"
 
+    # Universe API demo: reachable from the GENERAL context (no WorldThread).
+    universe = get_universe()
+    world_names = [world.name for world in universe.worlds]
+    default_world = universe.get_default_world()
+    print(
+        f"[UNIVERSE/GENERAL] worlds={world_names} "
+        f"default={default_world.name if default_world else None} "
+        f"players={universe.player_count}"
+    )
+
 
 @on_start
 def on_plugin_start() -> None:
@@ -93,9 +104,18 @@ def on_plugin_shutdown() -> None:
 
 @on_event(_AddPlayerToWorldEvent)
 def handle_add_player_to_world(event: "JavaObject") -> None:
-    print(
-        f"[EVENT/off-WorldThread] AddPlayerToWorldEvent: world={event.getWorld().getName()}"
-    )
+    world_name = event.getWorld().getName()
+    print(f"[EVENT/off-WorldThread] AddPlayerToWorldEvent: world={world_name}")
+
+    # This handler runs off the WorldThread, so the world-thread guard should
+    # reject block access on a World obtained via the Universe.
+    world = get_universe().get_world(world_name)
+    assert world is not None
+    try:
+        world.get_block(0, 64, 0)
+        print("[GUARD] ERROR: off-thread get_block was NOT blocked")
+    except NotInWorldThreadError as error:
+        print(f"[GUARD] off-thread get_block correctly blocked: {error}")
 
 
 @on_event(_PlayerReadyEvent)
@@ -122,6 +142,19 @@ def handle_player_ready(event: "JavaObject") -> None:
         print(f"[WORLD] block at (0, 64, 0) = {block}")
     except ChunkNotLoadedError as error:
         print(f"[WORLD] block read skipped: {error}")
+
+    # Universe API demo: same singleton, now from the WORLD context.
+    universe = get_universe()
+    print(
+        f"[UNIVERSE/WorldThread] worlds={[w.name for w in universe.worlds]} "
+        f"players={universe.player_count}"
+    )
+    looked_up = universe.get_world_by_uuid(config.uuid)
+    print(
+        f"[UNIVERSE] get_world_by_uuid({config.uuid}) -> "
+        f"{looked_up.name if looked_up else None}"
+    )
+    universe.send_message(f"[universe broadcast] {world.name} is online")
 
 
 @on_async_event(_PlayerChatEvent)

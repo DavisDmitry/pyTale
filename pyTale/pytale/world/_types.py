@@ -8,7 +8,7 @@ import java as _java
 if TYPE_CHECKING:
     from java import JavaObject
 
-from pytale.world.errors import ChunkNotLoadedError
+from pytale.world.errors import ChunkNotLoadedError, NotInWorldThreadError
 
 _Message = _java.type("com.hypixel.hytale.server.core.Message")
 _ChunkUtil = _java.type("com.hypixel.hytale.math.util.ChunkUtil")
@@ -100,11 +100,25 @@ class WorldConfig:
 
 
 class World:
-    """Wrapper for com.hypixel.hytale.server.core.universe.world.World"""
+    """Wrapper for com.hypixel.hytale.server.core.universe.world.World.
+
+    Read-only metadata (name, config, counters) may be read from any context,
+    and send_message self-enqueues onto the world thread so it is also safe
+    anywhere. Block access and world-state mutation (ticking/paused/tps) must
+    run on the world's own thread: those methods raise NotInWorldThreadError
+    when called on a World obtained outside its WORLD context (e.g. one returned
+    by the Universe in the general context). Use such a World for inspection
+    only, or run the mutation from that world's own context.
+    """
 
     def __init__(self, java_obj: "JavaObject") -> None:
         self._java = java_obj
         self._config: WorldConfig | None = None
+
+    def _require_thread(self, operation: str) -> None:
+        """Raise NotInWorldThreadError unless we are on this world's thread."""
+        if not self._java.isInThread():
+            raise NotInWorldThreadError(self._java.getName(), operation)
 
     # --- read-only properties ---
 
@@ -146,6 +160,7 @@ class World:
 
     @is_ticking.setter
     def is_ticking(self, value: bool) -> None:
+        self._require_thread("is_ticking")
         self._java.setTicking(value)
 
     @property
@@ -154,12 +169,14 @@ class World:
 
     @is_paused.setter
     def is_paused(self, value: bool) -> None:
+        self._require_thread("is_paused")
         self._java.setPaused(value)
 
     # --- block access ---
 
     def is_chunk_loaded(self, x: int, z: int) -> bool:
         """Return True if the chunk containing block column (x, z) is loaded and ticking."""
+        self._require_thread("is_chunk_loaded")
         return (
             self._java.getChunkIfLoaded(_ChunkUtil.indexChunkFromBlock(x, z))
             is not None
@@ -186,6 +203,7 @@ class World:
         When ``force`` is True the containing chunk is loaded if needed;
         otherwise ChunkNotLoadedError is raised if it is not already loaded.
         """
+        self._require_thread("get_block")
         return self._chunk_at(x, y, z, force).getBlock(x, y, z)
 
     def set_block(
@@ -204,6 +222,7 @@ class World:
         When ``force`` is True the containing chunk is loaded if needed;
         otherwise ChunkNotLoadedError is raised if it is not already loaded.
         """
+        self._require_thread("set_block")
         return self._chunk_at(x, y, z, force).setBlock(x, y, z, block_type, settings)
 
     def break_block(
@@ -215,16 +234,22 @@ class World:
         block changed. When ``force`` is True the containing chunk is loaded if
         needed; otherwise ChunkNotLoadedError is raised if it is not loaded.
         """
+        self._require_thread("break_block")
         return self._chunk_at(x, y, z, force).breakBlock(x, y, z, settings)
 
     # --- other methods ---
 
     def send_message(self, message: str) -> None:
-        """Broadcast a raw text message to all players in this world."""
+        """Broadcast a raw text message to all players in this world.
+
+        Safe to call from any thread: the Java side self-enqueues the broadcast
+        onto the world thread when called off it.
+        """
         self._java.sendMessage(_Message.raw(message))
 
     def set_tps(self, tps: int) -> None:
         """Set the world's target ticks per second."""
+        self._require_thread("set_tps")
         self._java.setTps(tps)
 
     def __repr__(self) -> str:
