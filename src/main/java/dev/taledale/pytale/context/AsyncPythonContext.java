@@ -3,7 +3,6 @@ package dev.taledale.pytale.context;
 import com.hypixel.hytale.event.IAsyncEvent;
 import com.hypixel.hytale.logger.HytaleLogger;
 import dev.taledale.pytale.AbstractPythonPlugin;
-import dev.taledale.pytale.ExecutionContext;
 import dev.taledale.pytale.PyTale;
 import org.graalvm.polyglot.PolyglotException;
 

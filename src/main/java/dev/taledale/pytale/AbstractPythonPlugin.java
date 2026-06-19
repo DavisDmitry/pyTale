@@ -7,6 +7,7 @@ import com.hypixel.hytale.server.core.plugin.JavaPluginInit;
 import com.hypixel.hytale.server.core.universe.Universe;
 import com.hypixel.hytale.server.core.universe.world.World;
 import dev.taledale.pytale.context.AsyncPythonContext;
+import dev.taledale.pytale.context.ExecutionContext;
 import dev.taledale.pytale.context.PythonContext;
 import dev.taledale.pytale.context.world.WorldContextManager;
 import dev.taledale.pytale.context.world.WorldPythonContext;
@@ -200,7 +201,7 @@ public abstract class AbstractPythonPlugin extends JavaPlugin {
                 for (int i = 0; i < size; i++) {
                     int index = i;
                     Value handler = handlers.getArrayElement(i);
-                    Class<? extends IEvent<?>> eventClass = (Class<? extends IEvent<?>>) handler.getMember("java_class")
+                    Class<? extends IEvent<?>> eventClass = handler.getMember("java_class")
                             .asHostObject();
                     short priority = (short) handler.getMember("priority").asInt();
                     Value keyValue = handler.getMember("key");
@@ -222,7 +223,7 @@ public abstract class AbstractPythonPlugin extends JavaPlugin {
                 for (int i = 0; i < asyncSize; i++) {
                     int index = i;
                     Value handler = asyncHandlers.getArrayElement(i);
-                    Class<? extends IAsyncEvent<?>> eventClass = (Class<? extends IAsyncEvent<?>>) handler
+                    Class<? extends IAsyncEvent<?>> eventClass = handler
                             .getMember("java_class").asHostObject();
                     short priority = (short) handler.getMember("priority").asInt();
                     Value keyValue = handler.getMember("key");

@@ -1,4 +1,4 @@
-package dev.taledale.pytale;
+package dev.taledale.pytale.context;
 
 /**
  * Execution context for Python code in pyTale plugins.

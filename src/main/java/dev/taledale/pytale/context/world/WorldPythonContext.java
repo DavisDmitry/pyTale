@@ -2,7 +2,7 @@ package dev.taledale.pytale.context.world;
 
 import com.hypixel.hytale.server.core.universe.world.World;
 import dev.taledale.pytale.AbstractPythonPlugin;
-import dev.taledale.pytale.ExecutionContext;
+import dev.taledale.pytale.context.ExecutionContext;
 import dev.taledale.pytale.context.PythonContext;
 import org.graalvm.polyglot.Value;
 
@@ -19,7 +19,7 @@ public class WorldPythonContext extends PythonContext {
 
     @Override
     public void init() {
-        world.execute(() -> super.init());
+        world.execute(super::init);
     }
 
     @Override
