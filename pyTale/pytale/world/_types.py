@@ -102,13 +102,13 @@ class WorldConfig:
 class World:
     """Wrapper for com.hypixel.hytale.server.core.universe.world.World.
 
-    Read-only metadata (name, config, counters) may be read from any context,
-    and send_message self-enqueues onto the world thread so it is also safe
-    anywhere. Block access and world-state mutation (ticking/paused/tps) must
-    run on the world's own thread: those methods raise NotInWorldThreadError
+    Most methods are safe from any context: read-only metadata, the
+    ticking/paused setters, and send_message / is_chunk_loaded (which
+    self-dispatch onto the world thread). Only get_block, set_block, break_block
+    and set_tps must run on the world's own thread, because they read the chunk
+    store or walk the entity store directly; those raise NotInWorldThreadError
     when called on a World obtained outside its WORLD context (e.g. one returned
-    by the Universe in the general context). Use such a World for inspection
-    only, or run the mutation from that world's own context.
+    by the Universe in the general context).
     """
 
     def __init__(self, java_obj: "JavaObject") -> None:
@@ -160,7 +160,6 @@ class World:
 
     @is_ticking.setter
     def is_ticking(self, value: bool) -> None:
-        self._require_thread("is_ticking")
         self._java.setTicking(value)
 
     @property
@@ -169,14 +168,17 @@ class World:
 
     @is_paused.setter
     def is_paused(self, value: bool) -> None:
-        self._require_thread("is_paused")
         self._java.setPaused(value)
 
     # --- block access ---
 
     def is_chunk_loaded(self, x: int, z: int) -> bool:
-        """Return True if the chunk containing block column (x, z) is loaded and ticking."""
-        self._require_thread("is_chunk_loaded")
+        """Return True if the chunk containing block column (x, z) is loaded and ticking.
+
+        Callable from any context: the Java side self-dispatches when off the
+        world thread. Off-thread it blocks until the world thread answers, so
+        prefer calling it from the world's own context.
+        """
         return (
             self._java.getChunkIfLoaded(_ChunkUtil.indexChunkFromBlock(x, z))
             is not None

@@ -20,11 +20,10 @@ class Universe:
     connected player, so it can be reached from any execution context (see
     ``get_universe``).
 
-    Worlds returned from here are real ``World`` wrappers, but note: a world
-    obtained outside its own WORLD context is safe for metadata/config reads and
-    ``send_message``. Block access and world-state mutation must run on that
-    world's thread; calling those methods here raises
-    ``pytale.world.NotInWorldThreadError``.
+    Worlds returned from here are real ``World`` wrappers: most methods (reads,
+    ticking/paused setters, ``send_message``) work here, but block access and
+    ``set_tps`` must run on that world's thread and raise
+    ``pytale.world.NotInWorldThreadError`` if called in this context.
     """
 
     def __init__(self, java_obj: "JavaObject") -> None:
