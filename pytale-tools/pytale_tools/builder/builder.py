@@ -41,7 +41,7 @@ class PluginBuilder:
         self.max_workers = max_workers
         self.metadata = self._read_metadata_from_wheel()
         self.module_name = self.metadata["name"].replace("-", "_")
-        self.cache_dir = self._find_project_dir() / ".pytale" / "cache"
+        self.cache_dir = self._find_project_dir() / ".pytale" / "wheels"
 
     def _find_project_dir(self) -> Path:
         for d in [self.wheel_path.parent, *self.wheel_path.parents]:
