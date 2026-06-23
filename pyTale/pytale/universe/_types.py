@@ -1,16 +1,19 @@
 """Type wrapper for the server-wide universe API"""
 
 from typing import TYPE_CHECKING
+from uuid import UUID
 
 import java as _java
 
 if TYPE_CHECKING:
     from java import JavaObject
 
+from pytale.players import PlayerRef
 from pytale.world._types import World
 
 _Message = _java.type("com.hypixel.hytale.server.core.Message")
 _UUID = _java.type("java.util.UUID")
+_NameMatching = _java.type("com.hypixel.hytale.server.core.NameMatching")
 
 
 class Universe:
@@ -41,6 +44,11 @@ class Universe:
         """All currently loaded worlds."""
         return [World(world) for world in self._java.getWorlds().values()]
 
+    @property
+    def players(self) -> tuple[PlayerRef, ...]:
+        """All currently connected players, across every world."""
+        return tuple(PlayerRef(player) for player in self._java.getPlayers())
+
     # --- lookups ---
 
     def get_world(self, name: str) -> World | None:
@@ -57,6 +65,19 @@ class Universe:
         """Return the configured default world, or None if unavailable."""
         world = self._java.getDefaultWorld()
         return World(world) if world is not None else None
+
+    def get_player(self, uuid: UUID) -> PlayerRef | None:
+        """Return the connected player with the given UUID, or None."""
+        player = self._java.getPlayer(_UUID.fromString(str(uuid)))
+        return PlayerRef(player) if player is not None else None
+
+    def get_player_by_name(self, name: str) -> PlayerRef | None:
+        """Return the connected player with the given username, or None.
+
+        Matching is case-insensitive but otherwise exact.
+        """
+        player = self._java.getPlayerByUsername(name, _NameMatching.EXACT_IGNORE_CASE)
+        return PlayerRef(player) if player is not None else None
 
     # --- other methods ---
 

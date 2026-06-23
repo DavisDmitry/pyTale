@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING
 
 import java
 from pytale.events import on_async_event, on_event
+from pytale.players import PlayerRef
 from pytale.plugin import (
     ExecutionContext,
     PluginState,
@@ -155,6 +156,22 @@ def handle_player_ready(event: "JavaObject") -> None:
         f"{looked_up.name if looked_up else None}"
     )
     universe.send_message(f"[universe broadcast] {world.name} is online")
+
+    # PlayerRef API demo: list players in this world and round-trip lookups.
+    for player in world.players:
+        print(
+            f"[PLAYER] {player.username} uuid={player.uuid} "
+            f"pos={player.position} world={player.world_uuid}"
+        )
+        by_uuid = universe.get_player(player.uuid)
+        by_name = universe.get_player_by_name(player.username)
+        print(
+            f"[PLAYER] lookups: by_uuid={by_uuid == player} "
+            f"by_name={by_name == player} "
+            f"can_fly={player.has_permission('hytale.fly', False)}"
+        )
+        assert isinstance(player, PlayerRef)
+        player.send_message(f"Welcome to {world.name}, {player.username}!")
 
 
 @on_async_event(_PlayerChatEvent)

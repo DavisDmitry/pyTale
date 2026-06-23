@@ -8,6 +8,7 @@ import java as _java
 if TYPE_CHECKING:
     from java import JavaObject
 
+from pytale.players import PlayerRef
 from pytale.world.errors import ChunkNotLoadedError, NotInWorldThreadError
 
 _Message = _java.type("com.hypixel.hytale.server.core.Message")
@@ -137,6 +138,11 @@ class World:
     @property
     def player_count(self) -> int:
         return self._java.getPlayerCount()
+
+    @property
+    def players(self) -> tuple[PlayerRef, ...]:
+        """All players currently in this world."""
+        return tuple(PlayerRef(player) for player in self._java.getPlayerRefs())
 
     @property
     def daytime_duration_seconds(self) -> int:
