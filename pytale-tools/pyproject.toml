@@ -7,7 +7,7 @@ name = "pytale-tools"
 version = "0.0.1"
 description = "PyTale development tools for building Python plugins"
 requires-python = ">=3.12"
-dependencies = ["pip>=24.0"]
+dependencies = ["httpx>=0.28"]
 
 [project.scripts]
 pytale-tools = "pytale_tools.cli:main"

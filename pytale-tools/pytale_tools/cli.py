@@ -4,7 +4,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from pytale_tools.build import PluginBuilder
+from pytale_tools.builder import PluginBuilder
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -28,11 +28,10 @@ def create_parser() -> argparse.ArgumentParser:
         help="Optional: path to requirements.txt for plugin dependencies (versions must be pinned with ==)",
     )
     build_parser.add_argument(
-        "-w",
-        "--wheels",
-        type=Path,
-        nargs="*",
-        help="Optional: additional wheel files to install into the plugin (e.g. local-only deps)",
+        "--download-workers",
+        type=int,
+        default=10,
+        help="Maximum number of parallel PyPI download workers (default: 10)",
     )
 
     return parser
@@ -51,7 +50,7 @@ def main() -> int:
             builder = PluginBuilder(
                 args.wheel,
                 args.requirements,
-                args.wheels if hasattr(args, "wheels") else None,
+                max_workers=args.download_workers,
             )
             output = args.output or Path(f"{builder.metadata['name']}.jar")
             builder.build(output)
