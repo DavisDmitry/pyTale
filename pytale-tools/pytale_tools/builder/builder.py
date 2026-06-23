@@ -9,8 +9,6 @@ imports resolve directly from the jar (no temp extraction).
 """
 
 import json
-import shutil
-import tempfile
 import zipfile
 from pathlib import Path
 
@@ -115,7 +113,11 @@ class PluginBuilder:
 
     @staticmethod
     def _unpack_wheel(
-        wheel_path: Path, dest: Path, *, include_dist_info: bool = True
+        wheel_path: Path,
+        jar: zipfile.ZipFile,
+        dest_prefix: str,
+        *,
+        include_dist_info: bool = True,
     ) -> set[str]:
         top_level: set[str] = set()
         with zipfile.ZipFile(wheel_path, "r") as whl:
@@ -134,10 +136,7 @@ class PluginBuilder:
                     continue
 
                 top_level.add(first)
-                target = dest / info.filename
-                target.parent.mkdir(parents=True, exist_ok=True)
-                with whl.open(info) as src, open(target, "wb") as dst:
-                    shutil.copyfileobj(src, dst)
+                jar.writestr(f"{dest_prefix}{info.filename}", whl.read(info))
 
         return top_level
 
@@ -147,41 +146,32 @@ class PluginBuilder:
         return f"GRAALPY-VFS/{VFS_GROUP}/{self.module_name}"
 
     @staticmethod
-    def _write_pyvenv_cfg(dest_venv: Path) -> None:
+    def _write_pyvenv_cfg(jar: zipfile.ZipFile, venv_prefix: str) -> None:
         cfg = (
             "home = .\n"
             "include-system-site-packages = false\n"
             f"version = {PYTHON_VERSION}\n"
         )
-        (dest_venv / "pyvenv.cfg").write_text(cfg)
+        jar.writestr(f"{venv_prefix}pyvenv.cfg", cfg)
 
-    def _copy_vfs(self, temp_dir: Path, dependency_wheels: list[Path]) -> str:
+    def _write_vfs(self, jar: zipfile.ZipFile, dependency_wheels: list[Path]) -> str:
         vfs_root_rel = self._vfs_root_rel()
-        vfs_root = temp_dir / vfs_root_rel
-        dest_venv = vfs_root / "venv"
-        dest_venv.mkdir(parents=True, exist_ok=True)
+        venv_prefix = f"{vfs_root_rel}/venv/"
 
-        self._write_pyvenv_cfg(dest_venv)
+        self._write_pyvenv_cfg(jar, venv_prefix)
+        jar.writestr(f"{venv_prefix}bin/python", b"")
 
-        bin_dir = dest_venv / "bin"
-        bin_dir.mkdir(parents=True, exist_ok=True)
-        (bin_dir / "python").write_bytes(b"")
-
-        python_dir_name = f"python{PYTHON_VERSION}"
-        dest_sp = dest_venv / "lib" / python_dir_name / "site-packages"
-        dest_sp.mkdir(parents=True, exist_ok=True)
-
+        site_packages = f"{venv_prefix}lib/python{PYTHON_VERSION}/site-packages/"
         for wheel_path in dependency_wheels:
-            self._unpack_wheel(wheel_path, dest_sp, include_dist_info=True)
+            self._unpack_wheel(wheel_path, jar, site_packages, include_dist_info=True)
         if dependency_wheels:
             print(
                 f"✓ Bundled {len(dependency_wheels)} dependencies -> {vfs_root_rel}/venv"
             )
 
-        dest_src = vfs_root / "src"
-        dest_src.mkdir(parents=True, exist_ok=True)
+        src_prefix = f"{vfs_root_rel}/src/"
         plugin_top_level = self._unpack_wheel(
-            self.wheel_path, dest_src, include_dist_info=False
+            self.wheel_path, jar, src_prefix, include_dist_info=False
         )
         if not plugin_top_level:
             raise RuntimeError(
@@ -190,19 +180,26 @@ class PluginBuilder:
         print(f"✓ Bundled plugin source -> {vfs_root_rel}/src")
         return vfs_root_rel
 
-    def _write_fileslist(self, temp_dir: Path, vfs_root_rel: str) -> None:
-        vfs_root = temp_dir / vfs_root_rel
-        lines = []
-        for path in sorted(vfs_root.rglob("*")):
-            rel = path.relative_to(temp_dir).as_posix()
-            lines.append("/" + rel + ("/" if path.is_dir() else ""))
+    def _write_fileslist(self, jar: zipfile.ZipFile, vfs_root_rel: str) -> None:
+        vfs_prefix = f"{vfs_root_rel}/"
+        entries: set[str] = set()
 
-        (vfs_root / "fileslist.txt").write_text("\n".join(lines) + "\n")
+        for name in jar.namelist():
+            if not name.startswith(vfs_prefix):
+                continue
+            entries.add(f"/{name}")
+            parts = name[len(vfs_prefix) :].split("/")
+            for i in range(1, len(parts)):
+                dir_path = "/".join(parts[:i])
+                entries.add(f"/{vfs_prefix}{dir_path}/")
+
+        lines = sorted(entries)
+        jar.writestr(f"{vfs_prefix}fileslist.txt", f"{'\n'.join(lines)}\n")
         print(f"✓ Wrote {vfs_root_rel}/fileslist.txt ({len(lines)} entries)")
 
     # ------------------------------------------------------------------ loader + manifest + jar
 
-    def _copy_loader_class(self, temp_dir: Path) -> str:
+    def _write_loader_class(self, jar: zipfile.ZipFile) -> str:
         class_file = self._find_python_plugin_class()
         if not class_file.exists():
             raise FileNotFoundError(
@@ -210,16 +207,13 @@ class PluginBuilder:
                 f"Build PyTale first with: ./gradlew jar"
             )
 
-        pkg_dir = temp_dir / "dev" / "taledale" / "pytale"
-        pkg_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(class_file, pkg_dir / "PythonPlugin.class")
+        jar.writestr("dev/taledale/pytale/PythonPlugin.class", class_file.read_bytes())
         return "dev.taledale.pytale.PythonPlugin"
 
     def _find_python_plugin_class(self) -> Path:
         return Path(__file__).parent.parent / "resources" / "PythonPlugin.class"
 
-    def _create_manifest_json(self, temp_dir: Path) -> Path:
-        manifest_path = temp_dir / "manifest.json"
+    def _write_manifest_json(self, jar: zipfile.ZipFile) -> None:
         manifest = {
             "Group": VFS_GROUP,
             "Name": self.metadata["name"],
@@ -232,30 +226,19 @@ class PluginBuilder:
             "ServerVersion": "=0.5.6",
             "Main": "dev.taledale.pytale.PythonPlugin",
         }
-        manifest_path.write_text(json.dumps(manifest, indent=4))
-        return manifest_path
-
-    def _create_jar(self, temp_dir: Path, output_path: Path) -> Path:
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as jar:
-            for item in temp_dir.rglob("*"):
-                if item.is_file():
-                    jar.write(item, arcname=str(item.relative_to(temp_dir)))
-        return output_path
+        jar.writestr("manifest.json", json.dumps(manifest, indent=4))
 
     def build(self, output_path: Path) -> Path:
         output_path = output_path.resolve()
+        output_path.parent.mkdir(parents=True, exist_ok=True)
 
         dependency_wheels = self._resolve_dependency_wheels()
 
-        with tempfile.TemporaryDirectory() as temp_dir_str:
-            temp_dir = Path(temp_dir_str)
+        with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as jar:
+            self._write_loader_class(jar)
+            self._write_manifest_json(jar)
+            vfs_root_rel = self._write_vfs(jar, dependency_wheels)
+            self._write_fileslist(jar, vfs_root_rel)
 
-            self._copy_loader_class(temp_dir)
-            self._create_manifest_json(temp_dir)
-            vfs_root_rel = self._copy_vfs(temp_dir, dependency_wheels)
-            self._write_fileslist(temp_dir, vfs_root_rel)
-            self._create_jar(temp_dir, output_path)
-
-            print(f"✓ Plugin JAR created: {output_path}")
-            return output_path
+        print(f"✓ Plugin JAR created: {output_path}")
+        return output_path
