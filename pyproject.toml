@@ -6,6 +6,7 @@ members = ["pyTale", "pytale-tools", "test-plugin", "java-stubs"]
 
 [tool.uv.sources]
 pytale = { workspace = true }
+pytale-tools = { workspace = true }
 
 [dependency-groups]
 dev = [

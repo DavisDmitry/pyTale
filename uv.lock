@@ -108,6 +108,18 @@ wheels = [
 ]
 
 [[package]]
+name = "ct3"
+version = "3.4.0.post5"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/96/c2/2a1605af41829cd2a247271b5b6f6b2dbc2e9407df2dd9bcafdceafcd4b3/ct3-3.4.0.post5.tar.gz", hash = "sha256:1c5f2000d52d591703c74f6f5f7ef427ed1b6501be28e3f1634f62c3a5d792e1", size = 303503, upload-time = "2025-11-29T12:38:18.761Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d7/ae/55e9a8ce30c37c43cd0677310bf4d58ed65b8f08880fa3ffccdd86f62125/ct3-3.4.0.post5-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:443bff9699ccb0fac142027bea3321a57fb33fe43ec7cccdbac5dd0be337dcbd", size = 863020, upload-time = "2025-11-29T12:39:51.975Z" },
+    { url = "https://files.pythonhosted.org/packages/0c/fe/33cab98b7ba9408b837300899bf1bded951bb0e82772c2f4f786951cb5e8/ct3-3.4.0.post5-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:61ec5dc8261ff8bb3b0d579ba95f8be9a938251e9a3547cc09ca65de702dbc69", size = 866396, upload-time = "2025-11-29T12:44:12.326Z" },
+    { url = "https://files.pythonhosted.org/packages/9f/27/3c3e5398fa49227b2dd67211b4402c84ed9d5b48a4257bf5b1196f9b6a8e/ct3-3.4.0.post5-cp312-cp312-manylinux_2_5_x86_64.manylinux1_x86_64.whl", hash = "sha256:3be2cd9d24b6c6741e90c3f854b20dd019b0c47f7887962972a515b92c35204e", size = 866146, upload-time = "2025-11-29T12:38:20.844Z" },
+    { url = "https://files.pythonhosted.org/packages/8b/0e/a065a472cadd8821962aa1f3eb988bcaa93a6cf04eae89b4f72251f5df70/ct3-3.4.0.post5-cp312-cp312-win_amd64.whl", hash = "sha256:9f8ed00963e774c41031727876df99694695b62c791e7de2e4352892ac1e1e06", size = 187276, upload-time = "2025-11-29T12:43:22.548Z" },
+]
+
+[[package]]
 name = "h11"
 version = "0.16.0"
 source = { registry = "https://pypi.org/simple" }
@@ -177,6 +189,18 @@ version = "25.0.3.post1"
 source = { editable = "java-stubs" }
 
 [[package]]
+name = "javatools"
+version = "1.6.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "ct3" },
+    { name = "six" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/05/e0/8b8b8c811be4e99c1be226065c5190dba703634ec75d185b8bbb6230eb4e/javatools-1.6.0-py3-none-any.whl", hash = "sha256:b92ac541baa10c623aeba50f3e2041781d80bbdaea2624e7d730a240b5f379df", size = 159333, upload-time = "2023-07-27T18:19:22.419Z" },
+]
+
+[[package]]
 name = "mypy-extensions"
 version = "1.1.0"
 source = { registry = "https://pypi.org/simple" }
@@ -238,12 +262,16 @@ source = { editable = "pyTale" }
 [package.dev-dependencies]
 dev = [
     { name = "java-stubs" },
+    { name = "pytale-tools" },
 ]
 
 [package.metadata]
 
 [package.metadata.requires-dev]
-dev = [{ name = "java-stubs", editable = "java-stubs" }]
+dev = [
+    { name = "java-stubs", editable = "java-stubs" },
+    { name = "pytale-tools", editable = "pytale-tools" },
+]
 
 [[package]]
 name = "pytale-tools"
@@ -251,10 +279,14 @@ version = "0.0.1"
 source = { editable = "pytale-tools" }
 dependencies = [
     { name = "httpx" },
+    { name = "javatools" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "httpx", specifier = ">=0.28" }]
+requires-dist = [
+    { name = "httpx", specifier = ">=0.28" },
+    { name = "javatools", specifier = ">=1.6" },
+]
 
 [[package]]
 name = "pytest"
@@ -298,6 +330,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/20/01/7436e9ad693cebda0551203e0bf28f7669976c60ad07d6402098208476de/pytokens-0.4.1-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:5ad948d085ed6c16413eb5fec6b3e02fa00dc29a2534f088d3302c47eb59adf9", size = 268076, upload-time = "2026-01-30T01:03:10.957Z" },
     { url = "https://files.pythonhosted.org/packages/2e/df/533c82a3c752ba13ae7ef238b7f8cdd272cf1475f03c63ac6cf3fcfb00b6/pytokens-0.4.1-cp312-cp312-win_amd64.whl", hash = "sha256:3f901fe783e06e48e8cbdc82d631fca8f118333798193e026a50ce1b3757ea68", size = 103552, upload-time = "2026-01-30T01:03:12.066Z" },
     { url = "https://files.pythonhosted.org/packages/c6/78/397db326746f0a342855b81216ae1f0a32965deccfd7c830a2dbc66d2483/pytokens-0.4.1-py3-none-any.whl", hash = "sha256:26cef14744a8385f35d0e095dc8b3a7583f6c953c2e3d269c7f82484bf5ad2de", size = 13729, upload-time = "2026-01-30T01:03:45.029Z" },
+]
+
+[[package]]
+name = "six"
+version = "1.17.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/94/e7/b2c673351809dca68a0e064b6af791aa332cf192da575fd474ed7d6f16a2/six-1.17.0.tar.gz", hash = "sha256:ff70335d468e7eb6ec65b95b99d3a2836546063f63acc5171de367e834932a81", size = 34031, upload-time = "2024-12-04T17:35:28.174Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b7/ce/149a00dd41f10bc29e5921b496af8b574d8413afcd5e30dfa0ed46c2cc5e/six-1.17.0-py2.py3-none-any.whl", hash = "sha256:4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274", size = 11050, upload-time = "2024-12-04T17:35:26.475Z" },
 ]
 
 [[package]]

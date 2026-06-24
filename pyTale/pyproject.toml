@@ -13,8 +13,10 @@ packages = ["pytale"]
 
 [tool.uv.sources]
 java-stubs = { workspace = true }
+pytale-tools = { workspace = true }
 
 [dependency-groups]
 dev = [
     "java-stubs",
+    "pytale-tools",
 ]
