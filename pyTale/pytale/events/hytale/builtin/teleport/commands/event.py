@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING
 
 import java as _java
 from pytale.events import Cancellable, Event
+from pytale.message import Message
 
 if TYPE_CHECKING:
     from java import JavaObject
@@ -24,8 +25,9 @@ class ModifyWarpEvent(Event, Cancellable):
     _java_class = _ModifyWarpEvent
 
     @property
-    def cancel_reason(self) -> "JavaObject | None":
-        return self._java.getCancelReason()
+    def cancel_reason(self) -> Message | None:
+        _value = self._java.getCancelReason()
+        return Message(_value) if _value is not None else None
 
     @property
     def warp(self) -> "JavaObject":

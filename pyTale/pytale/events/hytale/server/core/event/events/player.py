@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING
 
 import java as _java
 from pytale.events import AsyncEvent, Cancellable, Event
+from pytale.message import Message
 from pytale.players import PlayerRef
 from pytale.world import World
 from typing_extensions import deprecated
@@ -99,12 +100,13 @@ class AddPlayerToWorldEvent(Event):
         return self._java.getHolder()
 
     @property
-    def join_message(self) -> "JavaObject | None":
-        return self._java.getJoinMessage()
+    def join_message(self) -> Message | None:
+        _value = self._java.getJoinMessage()
+        return Message(_value) if _value is not None else None
 
     @join_message.setter
-    def join_message(self, value: "JavaObject") -> None:
-        self._java.setJoinMessage(value)
+    def join_message(self, value: Message) -> None:
+        self._java.setJoinMessage(value._java)
 
     @property
     def should_broadcast_join_message(self) -> bool:
@@ -342,12 +344,12 @@ class PlayerSetupConnectEvent(Event, Cancellable):
         return self._java.getPacketHandler()
 
     @property
-    def reason(self) -> "JavaObject":
-        return self._java.getReason()
+    def reason(self) -> Message:
+        return Message(self._java.getReason())
 
     @reason.setter
-    def reason(self, value: "JavaObject") -> None:
-        self._java.setReason(value)
+    def reason(self, value: Message) -> None:
+        self._java.setReason(value._java)
 
     @property
     def referral_data(self) -> "JavaObject | None":
@@ -394,12 +396,13 @@ class RemovedPlayerFromWorldEvent(Event):
         return self._java.getHolder()
 
     @property
-    def leave_message(self) -> "JavaObject | None":
-        return self._java.getLeaveMessage()
+    def leave_message(self) -> Message | None:
+        _value = self._java.getLeaveMessage()
+        return Message(_value) if _value is not None else None
 
     @leave_message.setter
-    def leave_message(self, value: "JavaObject") -> None:
-        self._java.setLeaveMessage(value)
+    def leave_message(self, value: Message) -> None:
+        self._java.setLeaveMessage(value._java)
 
     @property
     def should_broadcast_leave_message(self) -> bool:

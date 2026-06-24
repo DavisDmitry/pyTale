@@ -8,6 +8,7 @@ import java as _java
 if TYPE_CHECKING:
     from java import JavaObject
 
+from pytale.message import Message, MessageLike
 from pytale.players import PlayerRef
 from pytale.world.errors import ChunkNotLoadedError, NotInWorldThreadError
 
@@ -247,13 +248,16 @@ class World:
 
     # --- other methods ---
 
-    def send_message(self, message: str) -> None:
-        """Broadcast a raw text message to all players in this world.
+    def send_message(self, message: MessageLike) -> None:
+        """Broadcast a message to all players in this world.
 
         Safe to call from any thread: the Java side self-enqueues the broadcast
         onto the world thread when called off it.
         """
-        self._java.sendMessage(_Message.raw(message))
+        if isinstance(message, Message):
+            self._java.sendMessage(message._java)
+        else:
+            self._java.sendMessage(_Message.raw(message))
 
     def set_tps(self, tps: int) -> None:
         """Set the world's target ticks per second."""

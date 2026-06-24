@@ -8,6 +8,7 @@ import java as _java
 if TYPE_CHECKING:
     from java import JavaObject
 
+from pytale.message import Message, MessageLike
 from pytale.players import PlayerRef
 from pytale.world._types import World
 
@@ -81,9 +82,12 @@ class Universe:
 
     # --- other methods ---
 
-    def send_message(self, message: str) -> None:
-        """Broadcast a raw text message to every connected player."""
-        self._java.sendMessage(_Message.raw(message))
+    def send_message(self, message: MessageLike) -> None:
+        """Broadcast a message to every connected player."""
+        if isinstance(message, Message):
+            self._java.sendMessage(message._java)
+        else:
+            self._java.sendMessage(_Message.raw(message))
 
     def __repr__(self) -> str:
         return f"Universe(worlds={len(self.worlds)}, players={self.player_count})"

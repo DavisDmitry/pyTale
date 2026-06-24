@@ -8,6 +8,8 @@ import java as _java
 if TYPE_CHECKING:
     from java import JavaObject
 
+from pytale.message import Message, MessageLike
+
 _Message = _java.type("com.hypixel.hytale.server.core.Message")
 
 
@@ -84,9 +86,12 @@ class PlayerRef:
 
     # --- other methods ---
 
-    def send_message(self, message: str) -> None:
-        """Send a raw text chat message to this player."""
-        self._java.sendMessage(_Message.raw(message))
+    def send_message(self, message: MessageLike) -> None:
+        """Send a chat message to this player."""
+        if isinstance(message, Message):
+            self._java.sendMessage(message._java)
+        else:
+            self._java.sendMessage(_Message.raw(message))
 
     def has_permission(self, permission_id: str, default: bool | None = None) -> bool:
         """Return whether the player has the given permission.

@@ -6,6 +6,7 @@ from pytale.events.hytale.server.core.event.events.player import (
     PlayerChatEvent,
     PlayerReadyEvent,
 )
+from pytale.message import Message
 from pytale.players import PlayerRef
 from pytale.plugin import (
     ExecutionContext,
@@ -139,7 +140,9 @@ def handle_player_ready(event: PlayerReadyEvent) -> None:
         f"[UNIVERSE] get_world_by_uuid({config.uuid}) -> "
         f"{looked_up.name if looked_up else None}"
     )
-    universe.send_message(f"[universe broadcast] {world.name} is online")
+    universe.send_message(
+        Message.raw(f"[universe broadcast] {world.name} is online").color("#aaaaaa")
+    )
 
     for player in world.players:
         print(
@@ -154,7 +157,13 @@ def handle_player_ready(event: PlayerReadyEvent) -> None:
             f"can_fly={player.has_permission('hytale.fly', False)}"
         )
         assert isinstance(player, PlayerRef)
-        player.send_message(f"Welcome to {world.name}, {player.username}!")
+        player.send_message(
+            Message.join(
+                Message.raw(f"Welcome to {world.name}, "),
+                Message.raw(player.username).bold().color("#ffaa00"),
+                Message.raw("!"),
+            )
+        )
 
 
 @on_event(PlayerChatEvent)

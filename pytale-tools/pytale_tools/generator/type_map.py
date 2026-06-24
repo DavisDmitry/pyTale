@@ -33,6 +33,10 @@ _WRAPPER_MAP: dict[str, tuple[str, str]] = {
         "World",
         "pytale.world",
     ),
+    "Lcom/hypixel/hytale/server/core/Message;": (
+        "Message",
+        "pytale.message",
+    ),
 }
 
 
