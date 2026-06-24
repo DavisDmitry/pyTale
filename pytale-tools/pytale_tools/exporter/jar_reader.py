@@ -16,6 +16,7 @@ _ICANCELLABLE_ECS = "com/hypixel/hytale/component/event/ICancellableEcsEvent"
 
 _NONNULL_PATTERN = re.compile(r"Nonnull")
 _NULLABLE_PATTERN = re.compile(r"Nullable")
+_DEPRECATED_PATTERN = re.compile(r"java\.lang\.Deprecated")
 
 _DESCRIPTOR_RETURN = re.compile(r"\)(.+)$")
 _DESCRIPTOR_PARAMS = re.compile(r"\(([^)]*)\)")
@@ -45,6 +46,10 @@ def _detect_nullability(method: Any) -> Nullability:
     return Nullability.UNSPECIFIED
 
 
+def _is_deprecated(annotations: Any) -> bool:
+    return any(_DEPRECATED_PATTERN.search(str(a)) for a in annotations)
+
+
 def _extract_methods(class_info: Any) -> list[MethodMeta]:
     methods: list[MethodMeta] = []
     for m in class_info.methods:
@@ -60,6 +65,7 @@ def _extract_methods(class_info: Any) -> list[MethodMeta]:
                 is_bridge=bool(m.is_bridge()),
                 is_synthetic=bool(m.is_synthetic()),
                 nullability=_detect_nullability(m),
+                is_deprecated=_is_deprecated(m.get_annotations()),
             )
         )
     return methods
@@ -148,6 +154,7 @@ def read_event_classes(jar_path: Path) -> list[ClassMeta]:
                     fqn in icancellable_descendants
                     or fqn in icancellable_ecs_descendants
                 ),
+                is_deprecated=_is_deprecated(ci.get_annotations()),
                 methods=_extract_methods(ci),
             )
         )

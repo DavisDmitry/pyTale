@@ -20,6 +20,7 @@ class PropertySpec:
     wrapper_class: str | None = None
     wrapper_import: str | None = None
     setter_wrapper_class: str | None = None
+    is_deprecated: bool = False
 
 
 _SKIP_METHODS = frozenset(
@@ -113,6 +114,7 @@ def analyze_properties(cls: ClassMeta) -> None:
                 wrapper_class=wrapper_class,
                 wrapper_import=wrapper_import,
                 setter_wrapper_class=setter_wrapper_class,
+                is_deprecated=getter.is_deprecated,
             )
         )
 

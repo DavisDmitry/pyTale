@@ -20,6 +20,7 @@ class MethodMeta:
     is_bridge: bool
     is_synthetic: bool
     nullability: Nullability
+    is_deprecated: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -32,6 +33,7 @@ class MethodMeta:
             "is_bridge": self.is_bridge,
             "is_synthetic": self.is_synthetic,
             "nullability": self.nullability.name,
+            "is_deprecated": self.is_deprecated,
         }
 
     @classmethod
@@ -46,6 +48,7 @@ class MethodMeta:
             is_bridge=data["is_bridge"],
             is_synthetic=data["is_synthetic"],
             nullability=Nullability[data["nullability"]],
+            is_deprecated=data.get("is_deprecated", False),
         )
 
 
@@ -60,6 +63,7 @@ class ClassMeta:
     is_sync_event: bool
     is_async_event: bool
     is_cancellable: bool
+    is_deprecated: bool = False
     methods: list[MethodMeta] = field(default_factory=list)
     properties: list[Any] = field(default_factory=list)
     inner_classes: list["ClassMeta"] = field(default_factory=list)
@@ -76,6 +80,7 @@ class ClassMeta:
             "is_sync_event": self.is_sync_event,
             "is_async_event": self.is_async_event,
             "is_cancellable": self.is_cancellable,
+            "is_deprecated": self.is_deprecated,
             "methods": [m.to_dict() for m in self.methods],
         }
 
@@ -91,5 +96,6 @@ class ClassMeta:
             is_sync_event=data["is_sync_event"],
             is_async_event=data["is_async_event"],
             is_cancellable=data["is_cancellable"],
+            is_deprecated=data.get("is_deprecated", False),
             methods=[MethodMeta.from_dict(m) for m in data["methods"]],
         )
