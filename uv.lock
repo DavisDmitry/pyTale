@@ -258,6 +258,9 @@ wheels = [
 name = "pytale"
 version = "0.5.6.post1"
 source = { editable = "pyTale" }
+dependencies = [
+    { name = "typing-extensions" },
+]
 
 [package.dev-dependencies]
 dev = [
@@ -266,6 +269,7 @@ dev = [
 ]
 
 [package.metadata]
+requires-dist = [{ name = "typing-extensions", specifier = ">=4.15" }]
 
 [package.metadata.requires-dev]
 dev = [
