@@ -1,8 +1,11 @@
 import asyncio
-from typing import TYPE_CHECKING
 
-import java
-from pytale.events import on_async_event, on_event
+from pytale.events import on_event
+from pytale.events.hytale.server.core.event.events.player import (
+    AddPlayerToWorldEvent,
+    PlayerChatEvent,
+    PlayerReadyEvent,
+)
 from pytale.players import PlayerRef
 from pytale.plugin import (
     ExecutionContext,
@@ -18,19 +21,6 @@ from pytale.plugin import (
 )
 from pytale.universe import get_universe
 from pytale.world import ChunkNotLoadedError, NotInWorldThreadError, get_world
-
-if TYPE_CHECKING:
-    from java import JavaObject
-
-_AddPlayerToWorldEvent = java.type(
-    "com.hypixel.hytale.server.core.event.events.player.AddPlayerToWorldEvent"
-)
-_PlayerReadyEvent = java.type(
-    "com.hypixel.hytale.server.core.event.events.player.PlayerReadyEvent"
-)
-_PlayerChatEvent = java.type(
-    "com.hypixel.hytale.server.core.event.events.player.PlayerChatEvent"
-)
 
 print("=" * 60)
 print("pyTale Plugin Information")
@@ -76,7 +66,6 @@ def on_plugin_setup() -> None:
     print(f"[LIFECYCLE] Plugin setup! state={state.name}")
     assert state == PluginState.SETUP, f"Expected SETUP in @on_setup, got {state.name}"
 
-    # Universe API demo: reachable from the GENERAL context (no WorldThread).
     universe = get_universe()
     world_names = [world.name for world in universe.worlds]
     default_world = universe.get_default_world()
@@ -103,14 +92,11 @@ def on_plugin_shutdown() -> None:
     ), f"Expected SHUTDOWN in @on_shutdown, got {state.name}"
 
 
-@on_event(_AddPlayerToWorldEvent)
-def handle_add_player_to_world(event: "JavaObject") -> None:
-    world_name = event.getWorld().getName()
-    print(f"[EVENT/off-WorldThread] AddPlayerToWorldEvent: world={world_name}")
+@on_event(AddPlayerToWorldEvent)
+def handle_add_player_to_world(event: AddPlayerToWorldEvent) -> None:
+    print(f"[EVENT/off-WorldThread] AddPlayerToWorldEvent: world={event.world.name}")
 
-    # This handler runs off the WorldThread, so the world-thread guard should
-    # reject block access on a World obtained via the Universe.
-    world = get_universe().get_world(world_name)
+    world = get_universe().get_world(event.world.name)
     assert world is not None
     try:
         world.get_block(0, 64, 0)
@@ -119,17 +105,16 @@ def handle_add_player_to_world(event: "JavaObject") -> None:
         print(f"[GUARD] off-thread get_block correctly blocked: {error}")
 
 
-@on_event(_PlayerReadyEvent)
-def handle_player_ready(event: "JavaObject") -> None:
+@on_event(PlayerReadyEvent)
+def handle_player_ready(event: PlayerReadyEvent) -> None:
     state = get_state()
     print(
-        f"[EVENT/WorldThread] PlayerReadyEvent: player={event.getPlayer().getUuid()} state={state.name}"
+        f"[EVENT/WorldThread] PlayerReadyEvent: player={event.player_ref} state={state.name}"
     )
     assert (
         state == PluginState.ENABLED
     ), f"Expected ENABLED in event handler, got {state.name}"
 
-    # World API demo (runs on the WorldThread, so get_world() is available here)
     world = get_world()
     config = world.config
     print(f"[WORLD] name={world.name!r} tick={world.tick} alive={world.is_alive}")
@@ -144,7 +129,6 @@ def handle_player_ready(event: "JavaObject") -> None:
     except ChunkNotLoadedError as error:
         print(f"[WORLD] block read skipped: {error}")
 
-    # Universe API demo: same singleton, now from the WORLD context.
     universe = get_universe()
     print(
         f"[UNIVERSE/WorldThread] worlds={[w.name for w in universe.worlds]} "
@@ -157,7 +141,6 @@ def handle_player_ready(event: "JavaObject") -> None:
     )
     universe.send_message(f"[universe broadcast] {world.name} is online")
 
-    # PlayerRef API demo: list players in this world and round-trip lookups.
     for player in world.players:
         print(
             f"[PLAYER] {player.username} uuid={player.uuid} "
@@ -174,13 +157,11 @@ def handle_player_ready(event: "JavaObject") -> None:
         player.send_message(f"Welcome to {world.name}, {player.username}!")
 
 
-@on_async_event(_PlayerChatEvent)
-async def handle_player_chat_async(event: "JavaObject") -> None:
-    sender = event.getSender().getUsername()
-    original = event.getContent()
-    # Simulate async work (e.g. database lookup, moderation check).
+@on_event(PlayerChatEvent)
+async def handle_player_chat(event: PlayerChatEvent) -> None:
+    original = event.content
     await asyncio.sleep(0.05)
-    event.setContent(f"[async] {original}")
+    event.content = f"[async] {original}"
     print(
-        f"[ASYNC-EVENT] PlayerChatEvent: {sender!r} said {original!r} → content prefixed"
+        f"[ASYNC-EVENT] PlayerChatEvent: {event.sender!r} said {original!r} → content prefixed"
     )
