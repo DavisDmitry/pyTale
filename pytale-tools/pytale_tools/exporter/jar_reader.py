@@ -134,7 +134,7 @@ def read_event_classes(jar_path: Path) -> list[ClassMeta]:
 
         is_abstract = bool(ci.is_abstract())
         is_interface = bool(ci.is_interface())
-        if is_abstract or is_interface:
+        if is_interface:
             continue
 
         name_parts = java_class_to_python_name(fqn)
@@ -147,7 +147,7 @@ def read_event_classes(jar_path: Path) -> list[ClassMeta]:
                 python_class_name=python_name,
                 super_class=ci.get_super(),
                 interfaces=tuple(ci.get_interfaces()),
-                is_abstract=False,
+                is_abstract=is_abstract,
                 is_sync_event=fqn in ievent_descendants,
                 is_async_event=fqn in iasync_descendants,
                 is_cancellable=(

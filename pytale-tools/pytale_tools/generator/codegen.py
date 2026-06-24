@@ -4,13 +4,16 @@ from pytale_tools.exporter.models import ClassMeta
 from pytale_tools.generator.analyzer import PropertySpec
 
 
-def _base_classes(cls: ClassMeta) -> str:
+def _base_classes(cls: ClassMeta, known_classes: dict[str, str]) -> str:
     bases: list[str] = []
-    if cls.is_async_event:
+    parent = known_classes.get(cls.super_class) if cls.super_class else None
+    if parent is not None:
+        bases.append(parent)
+    elif cls.is_async_event:
         bases.append("AsyncEvent")
     elif cls.is_sync_event:
         bases.append("Event")
-    if cls.is_cancellable:
+    if cls.is_cancellable and "Cancellable" not in bases:
         bases.append("Cancellable")
     return ", ".join(bases) if bases else "BaseEvent"
 
@@ -54,9 +57,11 @@ def _generate_property(prop: PropertySpec, indent: str) -> list[str]:
     return lines
 
 
-def _generate_class(cls: ClassMeta, indent: str = "") -> list[str]:
+def _generate_class(
+    cls: ClassMeta, known_classes: dict[str, str], indent: str = ""
+) -> list[str]:
     lines: list[str] = []
-    bases = _base_classes(cls)
+    bases = _base_classes(cls, known_classes)
     var_name = _java_type_var_name(cls)
 
     if cls.is_deprecated:
@@ -72,7 +77,7 @@ def _generate_class(cls: ClassMeta, indent: str = "") -> list[str]:
 
     for inner in cls.inner_classes:
         lines.append("")
-        lines.extend(_generate_class(inner, indent + "    "))
+        lines.extend(_generate_class(inner, known_classes, indent + "    "))
 
     if not has_body:
         pass
@@ -141,9 +146,10 @@ def generate_module(classes: list[ClassMeta], jar_name: str) -> str:
     lines.append("")
     lines.append("import java as _java")
 
+    known_classes_for_bases = _build_known_classes(classes)
     used_bases: set[str] = set()
     for cls in classes:
-        _collect_bases(cls, used_bases)
+        _collect_bases(cls, used_bases, known_classes_for_bases)
     base_imports = sorted(used_bases)
     if base_imports:
         lines.append(f"from pytale.events import {', '.join(base_imports)}")
@@ -167,26 +173,44 @@ def generate_module(classes: list[ClassMeta], jar_name: str) -> str:
         lines.append(f'    "{dotted}"')
         lines.append(")")
 
-    for cls in classes:
+    known_classes = _build_known_classes(classes)
+    sorted_classes = sorted(
+        classes, key=lambda c: (not c.is_abstract, c.python_class_name)
+    )
+
+    for cls in sorted_classes:
         lines.append("")
         lines.append("")
-        lines.extend(_generate_class(cls))
+        lines.extend(_generate_class(cls, known_classes))
 
     lines.append("")
     return "\n".join(lines)
 
 
-def _collect_bases(cls: ClassMeta, bases: set[str]) -> None:
-    if cls.is_async_event:
-        bases.add("AsyncEvent")
-    elif cls.is_sync_event:
-        bases.add("Event")
-    else:
-        bases.add("BaseEvent")
+def _build_known_classes(classes: list[ClassMeta]) -> dict[str, str]:
+    result: dict[str, str] = {}
+    for cls in classes:
+        result[cls.java_fqn] = cls.python_class_name
+        for inner in cls.inner_classes:
+            result[inner.java_fqn] = inner.python_class_name
+    return result
+
+
+def _collect_bases(
+    cls: ClassMeta, bases: set[str], known_classes: dict[str, str]
+) -> None:
+    parent = known_classes.get(cls.super_class) if cls.super_class else None
+    if parent is None:
+        if cls.is_async_event:
+            bases.add("AsyncEvent")
+        elif cls.is_sync_event:
+            bases.add("Event")
+        else:
+            bases.add("BaseEvent")
     if cls.is_cancellable:
         bases.add("Cancellable")
     for inner in cls.inner_classes:
-        _collect_bases(inner, bases)
+        _collect_bases(inner, bases, known_classes)
 
 
 def _get_package_path(cls: ClassMeta) -> str:
