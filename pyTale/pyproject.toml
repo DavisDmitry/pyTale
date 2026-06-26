@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "pytale"
 version = "0.5.6-1"
 description = "pyTale Python library for Hytale plugins"
-requires-python = ">=3.12,<3.13"
+requires-python = ">=3.12,<3.15"
 dependencies = ["typing-extensions>=4.15"]
 
 [tool.hatch.build.targets.wheel]
