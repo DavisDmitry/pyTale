@@ -4,6 +4,7 @@ import com.hypixel.hytale.event.IEvent;
 import com.hypixel.hytale.logger.HytaleLogger;
 import dev.taledale.pytale.AbstractPythonPlugin;
 import dev.taledale.pytale.PyTale;
+import dev.taledale.pytale.command.PythonCommandContext;
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.HostAccess;
 import org.graalvm.polyglot.PolyglotException;
@@ -131,6 +132,24 @@ public class PythonContext {
                                 "_execute_handler(__event_index, __event_obj)");
             } catch (PolyglotException e) {
                 logger.atWarning().log("Python error in event handler %d: %s", index, e.getMessage());
+            }
+        });
+    }
+
+    public void invokeCommandHandler(int index, PythonCommandContext pyCtx) {
+        if (context == null) {
+            logger.atWarning().log("Context not initialized, cannot invoke command handler");
+            return;
+        }
+        withContext(() -> {
+            try {
+                context.getBindings("python").putMember("__cmd_index", index);
+                context.getBindings("python").putMember("__cmd_ctx", pyCtx);
+                context.eval("python",
+                        "from pytale.commands._registry import _execute_command\n" +
+                                "_execute_command(__cmd_index, __cmd_ctx)");
+            } catch (PolyglotException e) {
+                logger.atWarning().log("Python error in command handler %d: %s", index, e.getMessage());
             }
         });
     }

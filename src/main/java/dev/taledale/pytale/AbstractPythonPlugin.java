@@ -2,10 +2,15 @@ package dev.taledale.pytale;
 
 import com.hypixel.hytale.event.IAsyncEvent;
 import com.hypixel.hytale.event.IEvent;
+import com.hypixel.hytale.server.core.command.system.AbstractCommand;
+import com.hypixel.hytale.server.core.command.system.arguments.system.Argument;
+import com.hypixel.hytale.server.core.command.system.arguments.types.ArgTypes;
+import com.hypixel.hytale.server.core.command.system.arguments.types.ArgumentType;
 import com.hypixel.hytale.server.core.plugin.JavaPlugin;
 import com.hypixel.hytale.server.core.plugin.JavaPluginInit;
 import com.hypixel.hytale.server.core.universe.Universe;
 import com.hypixel.hytale.server.core.universe.world.World;
+import dev.taledale.pytale.command.*;
 import dev.taledale.pytale.context.AsyncPythonContext;
 import dev.taledale.pytale.context.ExecutionContext;
 import dev.taledale.pytale.context.PythonContext;
@@ -18,6 +23,8 @@ import org.graalvm.polyglot.Value;
 import javax.annotation.Nonnull;
 import java.net.URL;
 import java.net.URLClassLoader;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
@@ -89,7 +96,7 @@ public abstract class AbstractPythonPlugin extends JavaPlugin {
                     ExecutionContext.GENERAL);
             generalContext.init();
 
-            if (hasAsyncEventHandlers()) {
+            if (hasAsyncEventHandlers() || hasAsyncCommands()) {
                 asyncContext = new AsyncPythonContext(
                         this,
                         getLogger().getSubLogger("AsyncContext"));
@@ -97,6 +104,7 @@ public abstract class AbstractPythonPlugin extends JavaPlugin {
             }
 
             readAndRegisterEventHandlers();
+            readAndRegisterCommands();
             executeLifecycleListeners("setup");
             worldContextManager.start();
         } catch (Exception e) {
@@ -244,6 +252,7 @@ public abstract class AbstractPythonPlugin extends JavaPlugin {
         });
     }
 
+    @SuppressWarnings("null")
     private void dispatchToCurrentThread(int index, IEvent<?> event) {
         World world = Universe.get().getWorlds().values().stream()
                 .filter(World::isInThread)
@@ -264,6 +273,185 @@ public abstract class AbstractPythonPlugin extends JavaPlugin {
             return;
         }
         generalContext.invokeEventHandler(index, event);
+    }
+
+    private boolean hasAsyncCommands() {
+        if (generalContext == null) return false;
+        Context ctx = generalContext.getContext();
+        if (ctx == null) return false;
+
+        AtomicBoolean result = new AtomicBoolean(false);
+        generalContext.withContext(() -> {
+            try {
+                ctx.eval("python",
+                        "import pytale.commands._registry as __cmd_reg\n" +
+                                "__cmd_async_handlers = __cmd_reg._async_handlers");
+                result.set(ctx.getBindings("python").getMember("__cmd_async_handlers").getArraySize() > 0);
+            } catch (Exception e) {
+                getLogger().atWarning().log("Error checking async commands: %s", e.getMessage());
+            }
+        });
+        return result.get();
+    }
+
+    private static ArgumentType<?> resolveArgType(String argTypeName) {
+        return switch (argTypeName) {
+            case "BOOLEAN" -> ArgTypes.BOOLEAN;
+            case "INTEGER" -> ArgTypes.INTEGER;
+            case "FLOAT" -> ArgTypes.FLOAT;
+            case "DOUBLE" -> ArgTypes.DOUBLE;
+            case "STRING" -> ArgTypes.STRING;
+            case "GREEDY_STRING" -> ArgTypes.GREEDY_STRING;
+            case "UUID" -> ArgTypes.UUID;
+            case "PLAYER_REF" -> ArgTypes.PLAYER_REF;
+            case "WORLD" -> ArgTypes.WORLD;
+            case "GAME_MODE" -> ArgTypes.GAME_MODE;
+            default -> throw new IllegalArgumentException("Unknown arg type: " + argTypeName);
+        };
+    }
+
+    @SuppressWarnings("null")
+    private void buildArguments(AbstractCommand command, Value args, Map<String, Argument<?, ?>> argMap) {
+        long size = args.getArraySize();
+        for (int i = 0; i < size; i++) {
+            Value arg = args.getArrayElement(i);
+            String argName = arg.getMember("name").asString();
+            Value descValue = arg.getMember("description");
+            String argDesc = descValue.isNull() || !descValue.isString() ? "" : descValue.asString();
+
+            // FlagArg has no arg_type
+            if (!arg.hasMember("arg_type") || arg.getMember("arg_type").isNull()) {
+                argMap.put(argName, command.withFlagArg(argName, argDesc));
+                continue;
+            }
+
+            String typeName = arg.getMember("arg_type").getMember("value").asString();
+            ArgumentType<?> argType = resolveArgType(typeName);
+
+            boolean required = arg.getMember("required").asBoolean();
+            if (required) {
+                argMap.put(argName, command.withRequiredArg(argName, argDesc, argType));
+            } else {
+                argMap.put(argName, command.withOptionalArg(argName, argDesc, argType));
+            }
+        }
+    }
+
+    @SuppressWarnings("null")
+    private AbstractCommand createCommandFromHandler(Value handler) {
+        String name = handler.getMember("name").asString();
+        String description = handler.getMember("description").asString();
+        String commandType = handler.getMember("command_type").getMember("value").asString();
+        int handlerIndex = handler.getMember("index").asInt();
+        Value argsValue = handler.getMember("args");
+
+        // Create with a mutable map; buildArguments fills it by calling withRequiredArg/etc.
+        // on the same command instance, so args are registered on the correct object.
+        Map<String, Argument<?, ?>> argMap = new LinkedHashMap<>();
+        AbstractCommand command = switch (commandType) {
+            case "DEFAULT" -> new PythonDefaultCommand(
+                    name, description, handlerIndex, argMap, asyncContext);
+            case "WORLD" -> new PythonWorldCommand(
+                    name, description, handlerIndex, argMap, worldContextManager);
+            case "ASYNC_WORLD" -> new PythonAsyncWorldCommand(
+                    name, description, handlerIndex, argMap, asyncContext);
+            case "PLAYER" -> new PythonPlayerCommand(
+                    name, description, handlerIndex, argMap, worldContextManager);
+            case "ASYNC_PLAYER" -> new PythonAsyncPlayerCommand(
+                    name, description, handlerIndex, argMap, asyncContext);
+            default -> throw new IllegalArgumentException("Unknown command type: " + commandType);
+        };
+        buildArguments(command, argsValue, argMap);
+
+        // Permission
+        Value permValue = handler.getMember("permission");
+        if (!permValue.isNull()) {
+            command.requirePermission(permValue.asString());
+        }
+
+        // Aliases
+        Value aliases = handler.getMember("aliases");
+        if (aliases.hasArrayElements() && aliases.getArraySize() > 0) {
+            String[] aliasArray = new String[(int) aliases.getArraySize()];
+            for (int i = 0; i < aliasArray.length; i++) {
+                aliasArray[i] = aliases.getArrayElement(i).asString();
+            }
+            command.addAliases(aliasArray);
+        }
+
+        return command;
+    }
+
+    @SuppressWarnings("null")
+    private AbstractCommand buildCollection(Value collection) {
+        String name = collection.getMember("name").asString();
+        String description = collection.getMember("description").asString();
+        PythonCommandCollection cmd = new PythonCommandCollection(name, description);
+
+        Value permValue = collection.getMember("permission");
+        if (!permValue.isNull()) {
+            cmd.requirePermission(permValue.asString());
+        }
+
+        Value aliases = collection.getMember("aliases");
+        if (aliases.hasArrayElements() && aliases.getArraySize() > 0) {
+            String[] aliasArray = new String[(int) aliases.getArraySize()];
+            for (int i = 0; i < aliasArray.length; i++) {
+                aliasArray[i] = aliases.getArrayElement(i).asString();
+            }
+            cmd.addAliases(aliasArray);
+        }
+
+        // Sub-commands
+        Value subCommands = collection.getMember("sub_commands");
+        for (int i = 0; i < subCommands.getArraySize(); i++) {
+            AbstractCommand subCmd = createCommandFromHandler(subCommands.getArrayElement(i));
+            cmd.addSubCommand(subCmd);
+        }
+
+        // Nested collections
+        Value subCollections = collection.getMember("sub_collections");
+        for (int i = 0; i < subCollections.getArraySize(); i++) {
+            AbstractCommand nested = buildCollection(subCollections.getArrayElement(i));
+            cmd.addSubCommand(nested);
+        }
+
+        return cmd;
+    }
+
+    @SuppressWarnings("null")
+    private void readAndRegisterCommands() {
+        if (generalContext == null) return;
+        Context ctx = generalContext.getContext();
+        if (ctx == null) return;
+
+        generalContext.withContext(() -> {
+            try {
+                ctx.eval("python",
+                        "import pytale.commands._registry as __cmd_reg\n" +
+                                "__cmd_commands = __cmd_reg._commands\n" +
+                                "__cmd_collections = __cmd_reg._collections");
+
+                // Standalone commands
+                Value commands = ctx.getBindings("python").getMember("__cmd_commands");
+                for (int i = 0; i < commands.getArraySize(); i++) {
+                    Value handler = commands.getArrayElement(i);
+                    AbstractCommand command = createCommandFromHandler(handler);
+                    getCommandRegistry().registerCommand(command);
+                    getLogger().atInfo().log("Registered command /%s", command.getName());
+                }
+
+                // Collections
+                Value collections = ctx.getBindings("python").getMember("__cmd_collections");
+                for (int i = 0; i < collections.getArraySize(); i++) {
+                    AbstractCommand collection = buildCollection(collections.getArrayElement(i));
+                    getCommandRegistry().registerCommand(collection);
+                    getLogger().atInfo().log("Registered command collection /%s", collection.getName());
+                }
+            } catch (Exception e) {
+                getLogger().atWarning().log("Error reading commands: %s", e.getMessage());
+            }
+        });
     }
 
     public Engine getPythonEngine() {

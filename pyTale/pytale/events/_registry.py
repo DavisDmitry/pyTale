@@ -49,16 +49,14 @@ class _QueuedAsyncEvent(Protocol):
     def future(self) -> _JavaFuture: ...
 
 
-class _AsyncEventQueue(Protocol):
+class AsyncEventQueue(Protocol):
     """The Java ``LinkedBlockingQueue<QueuedAsyncEvent>`` bridged from the host."""
 
     def take(self) -> _QueuedAsyncEvent: ...
 
 
-async def _main(java_queue: _AsyncEventQueue) -> None:
+async def event_loop(java_queue: AsyncEventQueue) -> None:
     while True:
-        # The blocking take() runs on a worker thread so it never stalls the event loop;
-        # a poison pill (index < 0) is enqueued on shutdown to unblock it.
         queued = await asyncio.to_thread(java_queue.take)
         if queued.index() < 0:
             await asyncio.gather(*_tasks, return_exceptions=True)
@@ -86,10 +84,6 @@ async def _invoke(queued: _QueuedAsyncEvent) -> None:
             repr(error),
         )
         queued.future().completeExceptionally(_RuntimeException(repr(error)))
-
-
-def _start_loop(java_queue: _AsyncEventQueue) -> None:
-    asyncio.run(_main(java_queue))
 
 
 def _validate_java_class(java_class: "JavaClass") -> None:

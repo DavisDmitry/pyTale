@@ -4,6 +4,8 @@ import com.hypixel.hytale.event.IAsyncEvent;
 import com.hypixel.hytale.logger.HytaleLogger;
 import dev.taledale.pytale.AbstractPythonPlugin;
 import dev.taledale.pytale.PyTale;
+import dev.taledale.pytale.command.PythonCommandContext;
+import dev.taledale.pytale.command.QueuedCommand;
 import org.graalvm.polyglot.PolyglotException;
 
 import java.util.concurrent.CompletableFuture;
@@ -22,6 +24,7 @@ public class AsyncPythonContext extends PythonContext {
     private static final long SHUTDOWN_TIMEOUT_MS = 5000;
 
     private final LinkedBlockingQueue<QueuedAsyncEvent> queue = new LinkedBlockingQueue<>();
+    private final LinkedBlockingQueue<QueuedCommand> commandQueue = new LinkedBlockingQueue<>();
     private Thread asyncThread;
 
     public AsyncPythonContext(AbstractPythonPlugin plugin, HytaleLogger logger) {
@@ -35,6 +38,7 @@ public class AsyncPythonContext extends PythonContext {
             withContext(() -> {
                 doInit();
                 context.getBindings("python").putMember("__async_queue", queue);
+                context.getBindings("python").putMember("__cmd_queue", commandQueue);
             });
             startAsyncThread();
         } catch (PolyglotException e) {
@@ -51,8 +55,8 @@ public class AsyncPythonContext extends PythonContext {
             context.enter();
             try {
                 context.eval("python",
-                        "from pytale.events._registry import _start_loop\n" +
-                                "_start_loop(__async_queue)");
+                        "from pytale._loop import start_loop\n" +
+                                "start_loop(__async_queue, __cmd_queue)");
             } catch (PolyglotException e) {
                 logger.atWarning().log("Async event loop terminated: %s", e.getMessage());
             } finally {
@@ -69,10 +73,15 @@ public class AsyncPythonContext extends PythonContext {
         queue.offer(new QueuedAsyncEvent(index, event, future));
     }
 
+    public void enqueueCommand(int index, PythonCommandContext ctx, CompletableFuture<Void> future) {
+        commandQueue.offer(new QueuedCommand(index, ctx, future));
+    }
+
     @Override
     public void close(boolean cancelIfExecuting) {
-        // Signal the loop to stop, then wait for it to drain and leave the context before closing.
+        // Signal both loops to stop, then wait for them to drain and leave the context before closing.
         queue.offer(new QueuedAsyncEvent(-1, null, null));
+        commandQueue.offer(new QueuedCommand(-1, null, null));
         if (asyncThread != null) {
             try {
                 asyncThread.join(SHUTDOWN_TIMEOUT_MS);

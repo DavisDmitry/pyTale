@@ -1,5 +1,14 @@
 import asyncio
 
+from pytale.commands import (
+    Arg,
+    ArgType,
+    CommandContext,
+    CommandType,
+    FlagArg,
+    collection,
+    command,
+)
 from pytale.events import on_event
 from pytale.events.hytale.server.core.event.events.player import (
     AddPlayerToWorldEvent,
@@ -173,4 +182,55 @@ async def handle_player_chat(event: PlayerChatEvent) -> None:
     event.content = f"[async] {original}"
     print(
         f"[ASYNC-EVENT] PlayerChatEvent: {event.sender!r} said {original!r} → content prefixed"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Commands
+# ---------------------------------------------------------------------------
+
+
+@command("ping", description="Check server responsiveness")
+async def handle_ping(ctx: CommandContext) -> None:
+    ctx.send_message("Pong!")
+
+
+@command(
+    "greet",
+    description="Greet a player",
+    aliases=["hello"],
+    args=[
+        Arg("player", ArgType.PLAYER_REF, required=False),
+        FlagArg("loud"),
+    ],
+)
+async def handle_greet(ctx: CommandContext) -> None:
+    player = ctx.get("player", None)
+    name = player.getUsername() if player is not None else ctx.sender.username
+    msg = f"Hello, {name}!"
+    if ctx.get("loud", False):
+        msg = msg.upper()
+    ctx.send_message(msg)
+
+
+@command(
+    "whereami",
+    description="Show your position",
+    type=CommandType.PLAYER,
+)
+def handle_whereami(ctx: CommandContext) -> None:
+    assert ctx.player_ref is not None
+    pos = ctx.player_ref.position
+    ctx.send_message(f"You are at {pos[0]:.1f}, {pos[1]:.1f}, {pos[2]:.1f}")
+
+
+admin = collection(
+    "pytale", description="pyTale admin commands", permission="pytale.admin"
+)
+
+
+@admin.command("status", description="Show plugin status")
+async def handle_admin_status(ctx: CommandContext) -> None:
+    ctx.send_message(
+        f"pyTale is running! State: {get_state().name}, Context: {get_context().name}"
     )
