@@ -248,7 +248,7 @@ wheels = [
 
 [[package]]
 name = "java-stubs"
-version = "25.0.3.post1"
+version = "25.1.3"
 source = { editable = "java-stubs" }
 
 [[package]]

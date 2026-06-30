@@ -7,7 +7,7 @@ repositories {
 }
 
 dependencies {
-    implementation("org.graalvm.polyglot:polyglot:25.0.3")
-    implementation("org.graalvm.polyglot:python-community:25.0.3")
-    implementation("org.graalvm.python:python-embedding:25.0.3")
+    implementation("org.graalvm.polyglot:polyglot:25.1.3")
+    implementation("org.graalvm.polyglot:python-community:25.1.3")
+    implementation("org.graalvm.python:python-embedding:25.1.3")
 }
