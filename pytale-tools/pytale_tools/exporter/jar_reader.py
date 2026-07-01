@@ -13,6 +13,7 @@ _IEVENT = "com/hypixel/hytale/event/IEvent"
 _IASYNC_EVENT = "com/hypixel/hytale/event/IAsyncEvent"
 _ICANCELLABLE = "com/hypixel/hytale/event/ICancellable"
 _ICANCELLABLE_ECS = "com/hypixel/hytale/component/event/ICancellableEcsEvent"
+_COMPONENT = "com/hypixel/hytale/component/Component"
 
 _NONNULL_PATTERN = re.compile(r"Nonnull")
 _NULLABLE_PATTERN = re.compile(r"Nullable")
@@ -154,6 +155,49 @@ def read_event_classes(jar_path: Path) -> list[ClassMeta]:
                     fqn in icancellable_descendants
                     or fqn in icancellable_ecs_descendants
                 ),
+                is_deprecated=_is_deprecated(ci.get_annotations()),
+                methods=_extract_methods(ci),
+            )
+        )
+
+    return classes
+
+
+def read_component_classes(jar_path: Path) -> list[ClassMeta]:
+    with zipfile.ZipFile(jar_path) as jar:
+        children, class_bytes = _build_hierarchy(jar)
+
+    component_fqns = _find_descendants(children, _COMPONENT)
+
+    classes: list[ClassMeta] = []
+    for fqn in sorted(component_fqns):
+        class_path = fqn + ".class"
+        data = class_bytes.get(class_path)
+        if data is None:
+            continue
+
+        try:
+            ci = unpack_class(data)
+        except Exception:
+            continue
+
+        if bool(ci.is_interface()):
+            continue
+
+        name_parts = java_class_to_python_name(fqn)
+        python_name = name_parts[-1]
+
+        classes.append(
+            ClassMeta(
+                java_fqn=fqn,
+                java_dotted=fqn.replace("/", "."),
+                python_class_name=python_name,
+                super_class=ci.get_super(),
+                interfaces=tuple(ci.get_interfaces()),
+                is_abstract=bool(ci.is_abstract()),
+                is_sync_event=False,
+                is_async_event=False,
+                is_cancellable=False,
                 is_deprecated=_is_deprecated(ci.get_annotations()),
                 methods=_extract_methods(ci),
             )

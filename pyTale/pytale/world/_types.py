@@ -2,6 +2,7 @@
 
 from enum import IntFlag
 from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar
+from uuid import UUID
 
 import java as _java
 
@@ -9,6 +10,8 @@ if TYPE_CHECKING:
     from java import JavaObject
 
 from pytale._java_wrapper import JavaWrapper
+from pytale.components import Component
+from pytale.entities import EntityRef
 from pytale.message import Message, MessageLike
 from pytale.players import PlayerRef
 from pytale.plugin._plugin import get_world_context_manager
@@ -21,6 +24,9 @@ from pytale.world.errors import (
 
 _Message = _java.type("com.hypixel.hytale.server.core.Message")
 _ChunkUtil = _java.type("com.hypixel.hytale.math.util.ChunkUtil")
+_EntityBridge = _java.type("dev.taledale.pytale.entity.EntityBridge")
+_UUID = _java.type("java.util.UUID")
+_AddReason = _java.type("com.hypixel.hytale.component.AddReason")
 
 _EXECUTE_PRIMITIVE_TYPES = (int, float, str, bool, type(None))
 
@@ -136,12 +142,13 @@ class World(JavaWrapper):
     """Wrapper for com.hypixel.hytale.server.core.universe.world.World.
 
     Most methods are safe from any context: read-only metadata, the
-    ticking/paused setters, and send_message / is_chunk_loaded (which
-    self-dispatch onto the world thread). Only get_block, set_block, break_block
-    and set_tps must run on the world's own thread, because they read the chunk
-    store or walk the entity store directly; those raise NotInWorldThreadError
-    when called on a World obtained outside its WORLD context (e.g. one returned
-    by the Universe in the general context).
+    ticking/paused setters, and send_message / is_chunk_loaded / get_entity (which
+    self-dispatch onto the world thread). Only get_block, set_block, break_block,
+    set_tps, entities, get_entity_by_network_id and spawn_entity must run on the
+    world's own thread, because they read the chunk store or walk the entity store
+    directly; those raise NotInWorldThreadError when called on a World obtained
+    outside its WORLD context (e.g. one returned by the Universe in the general
+    context).
     """
 
     def __init__(self, java_obj: "JavaObject") -> None:
@@ -175,6 +182,21 @@ class World(JavaWrapper):
     def players(self) -> tuple[PlayerRef, ...]:
         """All players currently in this world."""
         return tuple(PlayerRef(player) for player in self._java.getPlayerRefs())
+
+    @property
+    def entities(self) -> tuple[EntityRef, ...]:
+        """All entities currently in this world's entity store.
+
+        Must run on this world's own tick thread; raises NotInWorldThreadError
+        otherwise, since it walks the entity component store directly (see
+        get_block for the same rationale).
+        """
+        self._require_thread("entities")
+        store = self._java.getEntityStore().getStore()
+        return tuple(
+            EntityRef(ref, store, self.name, self._java)
+            for ref in _EntityBridge.getAllRefs(self._java)
+        )
 
     @property
     def daytime_duration_seconds(self) -> int:
@@ -276,6 +298,52 @@ class World(JavaWrapper):
         """
         self._require_thread("break_block")
         return self._chunk_at(x, y, z, force).breakBlock(x, y, z, settings)
+
+    # --- entity access ---
+
+    def get_entity(self, uuid: UUID) -> EntityRef | None:
+        """Return the entity with the given UUID, or None if not present.
+
+        Safe to call from any context: the Java side self-dispatches when off the
+        world thread (mirrors is_chunk_loaded).
+        """
+        ref = self._java.getEntityRef(_UUID.fromString(str(uuid)))
+        if ref is None:
+            return None
+        return EntityRef(
+            ref, self._java.getEntityStore().getStore(), self.name, self._java
+        )
+
+    def get_entity_by_network_id(self, network_id: int) -> EntityRef | None:
+        """Return the entity with the given network id, or None if not present.
+
+        Must run on this world's own tick thread; raises NotInWorldThreadError
+        otherwise (EntityStore.getRefFromNetworkId has no self-dispatching
+        passthrough on World, unlike get_entity/getEntityRef).
+        """
+        self._require_thread("get_entity_by_network_id")
+        store = self._java.getEntityStore().getStore()
+        ref = store.getRefFromNetworkId(network_id)
+        if ref is None:
+            return None
+        return EntityRef(ref, store, self.name, self._java)
+
+    def spawn_entity(self, *components: "Component") -> EntityRef:
+        """Create a new entity in this world with the given initial components (zero
+        or more instances of generated pytale.components classes).
+
+        Must run on this world's own tick thread.
+        """
+        self._require_thread("spawn_entity")
+        store = self._java.getEntityStore().getStore()
+        holder = store.getRegistry().newHolder()
+        for component in components:
+            component_type = type(component)._java_class.getComponentType()
+            holder.putComponent(component_type, component._java)
+        ref = store.addEntity(holder, _AddReason.SPAWN)
+        if ref is None:
+            raise RuntimeError("entity was removed before spawn completed")
+        return EntityRef(ref, store, self.name, self._java)
 
     # --- other methods ---
 

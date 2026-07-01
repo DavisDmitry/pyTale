@@ -37,6 +37,12 @@ _WRAPPER_MAP: dict[str, tuple[str, str]] = {
         "Message",
         "pytale.message",
     ),
+    "Lorg/joml/Vector3d;": ("Vector3", "pytale.math"),
+    "Lorg/joml/Vector3dc;": ("Vector3", "pytale.math"),
+    "Lorg/joml/Vector3f;": ("Vector3", "pytale.math"),
+    "Lorg/joml/Vector3fc;": ("Vector3", "pytale.math"),
+    "Lcom/hypixel/hytale/math/vector/Rotation3f;": ("Rotation3", "pytale.math"),
+    "Lcom/hypixel/hytale/math/vector/Rotation3fc;": ("Rotation3", "pytale.math"),
 }
 
 

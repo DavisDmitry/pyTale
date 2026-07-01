@@ -1,4 +1,5 @@
 import asyncio
+from uuid import uuid4
 
 from pytale.commands import (
     Arg,
@@ -10,7 +11,12 @@ from pytale.commands import (
     command,
 )
 from pytale.events import on_event
-from pytale.events.hytale.server.core.event.events.player import (
+from pytale.hytale.components.server.core.entity import UUIDComponent
+from pytale.hytale.components.server.core.modules.entity.component import (
+    TransformComponent,
+)
+from pytale.hytale.components.server.core.modules.entity.tracker import NetworkId
+from pytale.hytale.events.server.core.event.events.player import (
     AddPlayerToWorldEvent,
     PlayerChatEvent,
     PlayerReadyEvent,
@@ -114,6 +120,12 @@ def handle_add_player_to_world(event: AddPlayerToWorldEvent) -> None:
     except NotInWorldThreadError as error:
         print(f"[GUARD] off-thread get_block correctly blocked: {error}")
 
+    try:
+        world.entities
+        print("[GUARD] ERROR: off-thread entities access was NOT blocked")
+    except NotInWorldThreadError as error:
+        print(f"[GUARD] off-thread entities access correctly blocked: {error}")
+
 
 @on_event(PlayerReadyEvent)
 def handle_player_ready(event: PlayerReadyEvent) -> None:
@@ -173,6 +185,43 @@ def handle_player_ready(event: PlayerReadyEvent) -> None:
                 Message.raw("!"),
             )
         )
+
+    print(f"[ENTITY] world has {len(world.entities)} entities")
+    for entity in world.entities:
+        uuid_component = entity.get_component(UUIDComponent)
+        network_id_component = entity.get_component(NetworkId)
+        transform = entity.get_component(TransformComponent)
+        print(
+            f"[ENTITY] valid={entity.is_valid} "
+            f"uuid={uuid_component.uuid if uuid_component else None} "
+            f"network_id={network_id_component.id if network_id_component else None} "
+            f"pos={transform.position if transform else None}"
+        )
+
+    if world.players:
+        looked_up_entity = world.get_entity(world.players[0].uuid)
+        assert looked_up_entity is not None
+        print(f"[ENTITY] get_entity(player uuid) -> {looked_up_entity}")
+
+    missing = world.get_entity(uuid4())
+    assert missing is None
+    print(f"[ENTITY] get_entity(random uuid) -> {missing}")
+
+    spawned = world.spawn_entity()
+    assert spawned.is_valid
+    assert spawned.get_component(UUIDComponent) is None  # nothing attached yet
+    print(f"[ENTITY] spawned {spawned}")
+
+    added_uuid = spawned.ensure_component(UUIDComponent)
+    print(f"[ENTITY] ensure_component(UUIDComponent) -> {added_uuid}")
+    assert spawned.has_component(UUIDComponent)
+    assert spawned.remove_component(UUIDComponent) is True
+    assert spawned.remove_component(UUIDComponent) is False  # already gone, no-op
+
+    assert spawned.remove() is True
+    assert not spawned.is_valid
+    assert spawned.remove() is False  # already removed, no-op
+    print(f"[ENTITY] spawn/remove round-trip ok, is_valid now {spawned.is_valid}")
 
     tick_before = world.tick
     world.execute(log_scheduled_task, 42, b="hello-from-world-thread")

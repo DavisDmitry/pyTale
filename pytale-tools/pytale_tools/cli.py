@@ -53,7 +53,7 @@ def create_parser() -> argparse.ArgumentParser:
     export_parser.add_argument(
         "-t",
         "--target",
-        choices=["all", "events"],
+        choices=["all", "events", "components"],
         default="all",
         help="What to export (default: all)",
     )
@@ -75,7 +75,7 @@ def create_parser() -> argparse.ArgumentParser:
     generate_parser.add_argument(
         "-t",
         "--target",
-        choices=["all", "events"],
+        choices=["all", "events", "components"],
         default="all",
         help="What to generate (default: all)",
     )
