@@ -1,10 +1,12 @@
 """Parser for requirements.txt files.
 
-Supports pinned versions (==) only. Rejects unpinned specifiers, editable installs, and URL
-requirements. Pip-specific options (--find-links, --index-url, etc.) are silently ignored.
+Supports pinned versions (==) only. Rejects unpinned specifiers and URL requirements.
+Pip-specific options (--find-links, --index-url, etc.) are silently ignored.
+Editable installs (-e ./path) are supported: the package source is bundled from the local path.
 """
 
 import re
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -22,6 +24,7 @@ class Requirement:
     name: str
     version: str
     path: Path | None = None
+    is_editable: bool = False
 
 
 def _normalize_name(name: str) -> str:
@@ -51,6 +54,19 @@ def _parse_wheel_filename(filename: str) -> tuple[str, str]:
     return _normalize_name(parts[0]), parts[1]
 
 
+def _read_project_info(pkg_dir: Path) -> tuple[str, str]:
+    """Read name and version from a local project directory."""
+    pyproject = pkg_dir / "pyproject.toml"
+    if pyproject.exists():
+        with open(pyproject, "rb") as f:
+            data = tomllib.load(f)
+        project = data.get("project", {})
+        name = project.get("name", pkg_dir.name)
+        version = project.get("version", "0.0.0")
+        return _normalize_name(name), version
+    return _normalize_name(pkg_dir.name), "0.0.0"
+
+
 def _parse_line(line: str, base_dir: Path) -> Requirement | None:
     line = line.strip()
     if not line or line.startswith("#"):
@@ -61,7 +77,16 @@ def _parse_line(line: str, base_dir: Path) -> Requirement | None:
         or line.startswith("--editable ")
         or line.startswith("-e\t")
     ):
-        raise ValueError(f"Editable installs are not supported: {line}")
+        path_str = re.split(r"\s+", line, 1)[1].strip()
+        pkg_dir = (base_dir / path_str).resolve()
+        if not pkg_dir.exists():
+            # uv export writes paths relative to the workspace root (CWD at export time),
+            # not relative to the requirements file location — try CWD as fallback
+            pkg_dir = (Path.cwd() / path_str).resolve()
+        if not pkg_dir.exists():
+            raise FileNotFoundError(f"Editable install path not found: {path_str}")
+        name, version = _read_project_info(pkg_dir)
+        return Requirement(name=name, version=version, path=pkg_dir, is_editable=True)
 
     if line.startswith("-r ") or line.startswith("--requirement "):
         return None  # handled by caller

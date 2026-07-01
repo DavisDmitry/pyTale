@@ -33,13 +33,13 @@ public class PythonContext {
     protected void buildContext() {
         // The plugin's Python code and its dependencies are pip-installed into a venv that is
         // bundled in the plugin jar under the GraalPy Virtual Filesystem resource root
-        // "GRAALPY-VFS/TaleDale/<module>". GraalPyResources points sys.path/sys.executable at that
+        // "GRAALPY-VFS/<group>/<module>". GraalPyResources points sys.path/sys.executable at that
         // venv, so packages import directly from the jar with no temp extraction (only native libs
         // are extracted on demand by the VFS). The resource-loading class is anchored to the plugin
         // jar (see AbstractPythonPlugin#getResourceAnchorClass) so the VFS metadata resolves
         // regardless of how the framework is deployed.
         VirtualFileSystem vfs = VirtualFileSystem.newBuilder()
-                .resourceDirectory("GRAALPY-VFS/TaleDale/" + moduleName())
+                .resourceDirectory("GRAALPY-VFS/" + plugin.getManifest().getGroup() + "/" + moduleName())
                 .resourceLoadingClass(plugin.getResourceAnchorClass())
                 .build();
 

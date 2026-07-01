@@ -17,7 +17,11 @@ def create_parser() -> argparse.ArgumentParser:
 
     # Build command
     build_parser = subparsers.add_parser("build", help="Build a Python plugin JAR")
-    build_parser.add_argument("wheel", type=Path, help="Path to wheel file (.whl)")
+    build_parser.add_argument(
+        "source",
+        type=Path,
+        help="Path to wheel file (.whl) or plugin project directory",
+    )
     build_parser.add_argument(
         "-o", "--output", type=Path, help="Output JAR path (default: plugin-name.jar)"
     )
@@ -90,7 +94,7 @@ def main() -> int:
     try:
         if args.command == "build":
             builder = PluginBuilder(
-                args.wheel,
+                args.source,
                 args.requirements,
                 max_workers=args.download_workers,
             )

@@ -72,9 +72,46 @@ def test_error_no_version(tmp_path: Path) -> None:
         parse_requirements(p)
 
 
-def test_error_editable(tmp_path: Path) -> None:
-    p = _write(tmp_path, "r.txt", "-e .\n")
-    with pytest.raises(ValueError, match="Editable installs"):
+def test_editable_with_pyproject(tmp_path: Path) -> None:
+    pkg_dir = tmp_path / "mypkg"
+    pkg_dir.mkdir()
+    (pkg_dir / "pyproject.toml").write_text(
+        '[project]\nname = "my-pkg"\nversion = "1.2.3"\n'
+    )
+    p = _write(tmp_path, "r.txt", f"-e {pkg_dir}\n")
+    result = parse_requirements(p)
+    assert len(result) == 1
+    assert result[0].name == "my_pkg"
+    assert result[0].version == "1.2.3"
+    assert result[0].path == pkg_dir
+    assert result[0].is_editable is True
+
+
+def test_editable_without_pyproject(tmp_path: Path) -> None:
+    pkg_dir = tmp_path / "some_lib"
+    pkg_dir.mkdir()
+    p = _write(tmp_path, "r.txt", f"-e {pkg_dir}\n")
+    result = parse_requirements(p)
+    assert result[0].name == "some_lib"
+    assert result[0].version == "0.0.0"
+    assert result[0].is_editable is True
+
+
+def test_editable_relative_path(tmp_path: Path) -> None:
+    pkg_dir = tmp_path / "mypkg"
+    pkg_dir.mkdir()
+    (pkg_dir / "pyproject.toml").write_text(
+        '[project]\nname = "mypkg"\nversion = "0.1.0"\n'
+    )
+    p = _write(tmp_path, "r.txt", "-e ./mypkg\n")
+    result = parse_requirements(p)
+    assert result[0].is_editable is True
+    assert result[0].path == pkg_dir.resolve()
+
+
+def test_editable_missing_path(tmp_path: Path) -> None:
+    p = _write(tmp_path, "r.txt", "-e ./nonexistent\n")
+    with pytest.raises(FileNotFoundError, match="Editable install path not found"):
         parse_requirements(p)
 
 
